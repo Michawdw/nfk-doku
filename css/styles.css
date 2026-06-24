@@ -163,8 +163,28 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 
 /* ---------- Structure tree ---------- */
 .tree { margin-top: 8px; }
-.tree-ober { margin: 14px 0 4px; font-size: 17px; font-weight: 800; color: var(--brand); border-bottom: 2px solid var(--line); padding-bottom: 4px; }
-.tree-unter { margin: 10px 0 4px 4px; font-size: 15px; font-weight: 700; color: var(--brand-light); }
+.tree-ober {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  margin: 10px 0 0; padding: 14px 12px;
+  font-size: 17px; font-weight: 800; color: var(--brand);
+  background: #fff; border: 1px solid var(--line); border-radius: 12px;
+}
+.tree-ober.open { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.tree-unter {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  margin: 8px 0 0 6px; padding: 10px 12px;
+  font-size: 15px; font-weight: 700; color: var(--brand-light);
+  background: #f7f9fb; border: 1px solid var(--line); border-radius: 10px;
+}
+.tree-ober .chev, .tree-unter .chev { flex: 0 0 auto; font-size: 12px; color: var(--muted); width: 14px; }
+.tree-ober .grp-name, .tree-unter .grp-name { flex: 1; min-width: 0; word-break: break-word; }
+.grp-stat { flex: 0 0 auto; font-size: 13px; font-weight: 700; color: var(--muted); background: #eef2f6; padding: 3px 10px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.grp-stat.done { background: #e7f5ec; color: var(--ok); }
+.grp-check { flex: 0 0 auto; color: var(--ok); font-weight: 900; font-size: 18px; line-height: 1; }
+/* Komplett erledigte Ordner: zusätzlich verblassen (Name in Grün/gedämpft) */
+.tree-ober.alldone .grp-name, .tree-unter.alldone .grp-name { color: var(--ok); opacity: .8; }
+.tree-body { padding-left: 4px; }
+.tree-ober.open + .tree-body { border: 1px solid var(--line); border-top: none; border-radius: 0 0 12px 12px; padding: 6px 8px 10px; margin-bottom: 6px; }
 .name-row {
   display: flex;
   align-items: center;
@@ -180,6 +200,8 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .name-main { flex: 1; min-width: 0; }
 .name-label { font-weight: 700; word-break: break-word; }
 .name-count { font-size: 13px; color: var(--muted); }
+.row-check { color: var(--ok); font-weight: 900; }
+.name-row.done .row-check { color: var(--ok); }
 .name-row.done .name-count { color: var(--done-text); }
 .count-badge {
   min-width: 54px; text-align: center;
@@ -194,6 +216,21 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .thumbs img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
 .thumb-wrap { position: relative; }
 .thumb-seq { position: absolute; bottom: 2px; right: 2px; background: rgba(0,0,0,.6); color: #fff; font-size: 10px; padding: 1px 4px; border-radius: 4px; }
+
+/* ---------- Bautagebuch-Archiv ---------- */
+.arch-head { margin: 4px 0 6px; }
+.diary-archive { display: grid; gap: 8px; margin-bottom: 16px; }
+.diary-arch-item {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff;
+}
+.diary-arch-item.active { border-color: var(--brand); background: #eaf2fb; }
+.da-main { flex: 1; min-width: 0; }
+.da-date { font-weight: 700; }
+.diary-arch-item.active .da-date { color: var(--brand); }
+.da-snip { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.da-go { flex: 0 0 auto; font-size: 13px; font-weight: 700; color: var(--brand); }
+.da-del { flex: 0 0 auto; width: 40px; height: 40px; border: 1px solid #f3c4be; background: #fdecea; border-radius: 8px; font-size: 16px; }
 
 /* ---------- Diary rows ---------- */
 .diary-rows { display: grid; gap: 10px; }

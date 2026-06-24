@@ -346,6 +346,11 @@ const App = (() => {
     }
   }
 
+  // Aufklapp-Zustand des Baums (bleibt über Re-Renders erhalten; Default: alles zu).
+  const expandedObers = new Set();
+  const expandedUnters = new Set();
+  function toggleSet(set, key) { if (set.has(key)) set.delete(key); else set.add(key); }
+
   async function renderTree() {
     const info = $('#templateInfo');
     const tree = $('#structureTree');
@@ -364,18 +369,54 @@ const App = (() => {
 
     tree.innerHTML = '';
     for (const [ober, unterMap] of grp) {
-      const h = document.createElement('div');
-      h.className = 'tree-ober';
-      h.textContent = ober;
-      tree.appendChild(h);
+      // Statistik (erledigt/gesamt) über alle Positionen des Oberordners.
+      const allNodes = [];
+      for (const list of unterMap.values()) for (const n of list) allNodes.push(n);
+      const oberDone = allNodes.filter((n) => n.done).length;
+      const oberAllDone = allNodes.length > 0 && oberDone >= allNodes.length;
+      const oberExpanded = expandedObers.has(ober);
+
+      const head = document.createElement('div');
+      head.className = 'tree-ober' + (oberExpanded ? ' open' : '') + (oberAllDone ? ' alldone' : '');
+      head.innerHTML = `<span class="chev">${oberExpanded ? '▼' : '▶'}</span>
+        <span class="grp-name">${escHtml(ober)}</span>
+        ${oberAllDone ? '<span class="grp-check" title="alle Pflichtbilder erledigt">✓</span>' : ''}
+        <span class="grp-stat${oberAllDone ? ' done' : ''}">${oberDone}/${allNodes.length}</span>`;
+      head.onclick = () => { toggleSet(expandedObers, ober); renderTree(); };
+      tree.appendChild(head);
+
+      if (!oberExpanded) continue; // Inhalt zugeklappter Ordner wird nicht gebaut
+
+      const body = document.createElement('div');
+      body.className = 'tree-body';
+      tree.appendChild(body);
+
       for (const [uk, list] of unterMap) {
         if (uk) {
-          const u = document.createElement('div');
-          u.className = 'tree-unter';
-          u.textContent = uk;
-          tree.appendChild(u);
+          const uKey = ober + Structure.SEP + uk;
+          const uDone = list.filter((n) => n.done).length;
+          const uAllDone = uDone >= list.length;
+          const uExpanded = expandedUnters.has(uKey);
+
+          const uHead = document.createElement('div');
+          uHead.className = 'tree-unter' + (uExpanded ? ' open' : '') + (uAllDone ? ' alldone' : '');
+          uHead.innerHTML = `<span class="chev">${uExpanded ? '▼' : '▶'}</span>
+            <span class="grp-name">${escHtml(uk)}</span>
+            ${uAllDone ? '<span class="grp-check" title="alle Pflichtbilder erledigt">✓</span>' : ''}
+            <span class="grp-stat${uAllDone ? ' done' : ''}">${uDone}/${list.length}</span>`;
+          uHead.onclick = () => { toggleSet(expandedUnters, uKey); renderTree(); };
+          body.appendChild(uHead);
+
+          if (uExpanded) {
+            const uBody = document.createElement('div');
+            uBody.className = 'tree-body';
+            body.appendChild(uBody);
+            for (const n of list) uBody.appendChild(await nameRow(n));
+          }
+        } else {
+          // Positionen direkt im Oberordner (ohne Unterordner)
+          for (const n of list) body.appendChild(await nameRow(n));
         }
-        for (const n of list) tree.appendChild(await nameRow(n));
       }
     }
   }
@@ -387,7 +428,7 @@ const App = (() => {
       <span class="count-badge">${n.ist}/${n.pflicht}</span>
       <div class="name-main">
         <div class="name-label">${escHtml(n.bildname)}</div>
-        <div class="name-count">${n.done ? 'erledigt' : 'offen'}</div>
+        <div class="name-count">${n.done ? '<span class="row-check">✓</span> erledigt' : 'offen'}</div>
         <div class="thumbs"></div>
       </div>
       <button class="gal-btn" title="Aus Galerie">🖼️</button>
@@ -505,7 +546,63 @@ const App = (() => {
     if (!diaryDate) diaryDate = h.datum || new Date().toISOString().slice(0, 10);
     f.datum.value = diaryDate;
     await loadDiaryForDate(diaryDate);
-    f.datum.onchange = async () => { diaryDate = f.datum.value; await loadDiaryForDate(diaryDate); };
+    await renderDiaryArchive();
+    f.datum.onchange = async () => { diaryDate = f.datum.value; await loadDiaryForDate(diaryDate); await renderDiaryArchive(); };
+  }
+
+  function fmtDate(datum) {
+    if (!datum) return '';
+    const [y, m, d] = datum.split('-');
+    return `${d}.${m}.${y}`;
+  }
+
+  // Liste der gespeicherten Bautagebuch-Tage des aktuellen Auftrags (neueste zuerst).
+  async function renderDiaryArchive() {
+    const cont = $('#diaryArchive');
+    if (!cont || !currentJob) return;
+    const days = await DB.listDiary(currentJob.id);
+    if (!days.length) {
+      cont.innerHTML = '<p class="hint">Noch keine Bautagebücher gespeichert. Trage unten einen Tag ein und tippe „Tag speichern".</p>';
+      return;
+    }
+    cont.innerHTML = '';
+    for (const day of days) {
+      const active = day.datum === diaryDate;
+      const snippet = (day.taetigkeiten || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      const div = document.createElement('div');
+      div.className = 'diary-arch-item' + (active ? ' active' : '');
+      div.innerHTML = `<div class="da-main">
+          <div class="da-date">${fmtDate(day.datum)}</div>
+          <div class="da-snip">${escHtml(snippet || '—')}</div>
+        </div>
+        <span class="da-go">öffnen ›</span>
+        <button class="da-del" title="Tag löschen">🗑</button>`;
+      div.querySelector('.da-main').onclick = async () => {
+        diaryDate = day.datum;
+        $('#diaryForm').datum.value = day.datum;
+        await loadDiaryForDate(day.datum);
+        await renderDiaryArchive();
+        window.scrollTo(0, 0);
+        toast('Tag ' + fmtDate(day.datum) + ' geladen – bearbeitbar');
+      };
+      div.querySelector('.da-go').onclick = div.querySelector('.da-main').onclick;
+      div.querySelector('.da-del').onclick = (e) => { e.stopPropagation(); deleteDiaryFlow(day); };
+      cont.appendChild(div);
+    }
+  }
+
+  async function deleteDiaryFlow(day) {
+    const ok = await openConfirm(
+      'Bautagebuch-Tag löschen?',
+      `<p>Den Tag <b>${fmtDate(day.datum)}</b> wirklich löschen?</p>
+       <p class="hint">Die Eingaben dieses Tages werden entfernt. Das kann nicht rückgängig
+       gemacht werden.</p>`,
+      'Löschen', true);
+    if (!ok) return;
+    await DB.deleteDiary(currentJob.id, day.datum);
+    if (day.datum === diaryDate) await loadDiaryForDate(diaryDate); // Formular leeren/auffrischen
+    await renderDiaryArchive();
+    toast('Tag ' + fmtDate(day.datum) + ' gelöscht');
   }
 
   async function loadDiaryForDate(datum) {
@@ -582,6 +679,7 @@ const App = (() => {
     const model = gatherDiary();
     if (!model.datum) { toast('Datum fehlt'); return; }
     await DB.saveDiary(currentJob.id, model);
+    await renderDiaryArchive();
     const s = $('#diarySaved');
     s.hidden = false; setTimeout(() => { s.hidden = true; }, 2000);
     toast('Tag gespeichert');
@@ -591,6 +689,7 @@ const App = (() => {
     const model = gatherDiary();
     if (!model.datum) { toast('Datum fehlt'); return; }
     await DB.saveDiary(currentJob.id, model); // immer mitspeichern
+    await renderDiaryArchive();
     const h = (currentJob && currentJob.header) || {};
     const full = Object.assign({}, model, {
       filiale: h.filiale || '',

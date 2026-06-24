@@ -221,12 +221,22 @@ const DB = (() => {
     obj.jobId = jobId;
     return reqP((await store('diary2', 'readwrite')).put(obj));
   }
+  async function deleteDiary(jobId, datum) {
+    return reqP((await store('diary2', 'readwrite')).delete([jobId, datum]));
+  }
+  // Alle gespeicherten Bautagebuch-Tage eines Auftrags, neueste zuerst.
+  async function listDiary(jobId) {
+    const s = await store('diary2', 'readonly');
+    const range = IDBKeyRange.bound([jobId, ''], [jobId, '￿']);
+    const all = await reqP(s.getAll(range));
+    return all.sort((a, b) => (a.datum < b.datum ? 1 : a.datum > b.datum ? -1 : 0));
+  }
 
   return {
     getMeta, setMeta, getDeviceId,
     listJobs, getJob, saveJob, createJob, deleteJob, newJob,
     getCurrentJobId, setCurrentJobId,
     countPhotos, getPhotos, getAllPhotos, addPhoto, getPhotoSrcIds,
-    getDiary, saveDiary,
+    getDiary, saveDiary, listDiary, deleteDiary,
   };
 })();

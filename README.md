@@ -41,6 +41,11 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
     bleiben beim Wechsel der Vorlage erhalten.
   - Pro Name Foto aufnehmen **oder** aus Galerie laden; automatische Komprimierung (lange Kante ≤ 2560 px, JPEG ~85 %, EXIF-Ausrichtung korrigiert).
   - Fortlaufende Benennung `<Bildname>_NN.jpg`; erledigte Positionen (Ist ≥ Pflicht) werden ausgegraut, weitere Bilder bleiben erlaubt (append-only, kein Löschen/Überschreiben).
+  - **Ein-/ausklappbarer Baum**: standardmäßig sind nur die Oberordner sichtbar (je mit
+    Status-Badge „erledigt/gesamt"). Antippen öffnet einen Oberordner (zeigt Unterordner/
+    Positionen); Unterordner sind ebenso auf-/zuklappbar – für bessere Übersicht am Handy.
+    Ist ein Ordner (inkl. seiner Unterordner) **komplett erledigt**, wird er verblasst und
+    mit einem **grünen Haken ✓** markiert.
   - Übersichts-Button: offene vs. erledigte Positionen.
   - **ZIP-Export** mit Template-Ordnerstruktur + `uebersicht.csv` + `manifest.json`
     (maschinenlesbare Bild→Position-Zuordnung); Weitergabe über den Android-Share-Dialog
@@ -63,6 +68,10 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
   - Export als `.xlsx` – erzeugt durch **Befüllen der Originalvorlage** (`assets/vorlage_bautagebuch.xlsx`): Logo, Rahmen, Schriften, Layout und Blattschutz bleiben garantiert 1:1 erhalten.
   - Datum als echtes Datum, Zeiten als echte Uhrzeit-/Dauerwerte.
   - Dateiname nach Vorlagemuster: `Bautagebuch_LI<Filialnummer>_<Ort>_<YYYY_MM_DD>.xlsx`.
+  - **Archiv pro Auftrag**: oben in der Bautagebuch-Ansicht sind alle gespeicherten Tage
+    gelistet (neueste zuerst). Ein Tag lässt sich antippen, um ihn wieder ins Formular zu
+    laden und **nachträglich zu bearbeiten** (z. B. Ergänzungen in älteren Bautagebüchern),
+    oder über 🗑 **mit Sicherheitsabfrage löschen**.
 - **Offline & Persistenz**: Service Worker cached die komplette App; alle Daten (Stammdaten, Struktur, eigene Namen, Bilder, Bautagebuch-Eingaben) liegen in IndexedDB und überstehen Neustart/Offline.
 
 ## Technik

@@ -83,11 +83,18 @@ const ExportZip = (() => {
     return { totalPhotos, fname };
   }
 
+  // Muster wie bei den Excel-Dateien: Bilddoku_LI<Filialnummer>_<Ort>_<YYYY_MM_DD>.zip
+  // (Filialnummer aus „7265 Memmingen" extrahiert, damit der Ort nicht doppelt erscheint).
   function buildZipName(project) {
-    const fil = (project.filiale || 'Projekt').replace(/\s+/g, '_');
-    const ort = (project.ort || '').replace(/\s+/g, '_');
+    const clean = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
+    const numMatch = clean(project.filiale).match(/\d+/);
+    const fil = (numMatch ? numMatch[0] : clean(project.filiale) || 'Projekt').replace(/\s+/g, '_');
+    const ort = clean(project.ort).replace(/\s+/g, '_');
     const d = (project.datum || new Date().toISOString().slice(0, 10)).replace(/-/g, '_');
-    return `Bilddoku_${fil}${ort ? '_' + ort : ''}_${d}.zip`.replace(/__+/g, '_');
+    const parts = ['Bilddoku', 'LI' + fil];
+    if (ort) parts.push(ort);
+    parts.push(d);
+    return parts.join('_').replace(/_+/g, '_') + '.zip';
   }
 
   return { build, safePart };
