@@ -15,6 +15,10 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+/* Das hidden-Attribut muss IMMER ausblenden – auch bei Elementen, die sonst
+   ein eigenes display (z. B. flex) gesetzt bekommen (Modal-Overlay!). */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   background: var(--bg);
