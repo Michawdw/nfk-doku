@@ -25,6 +25,10 @@ const ExportZip = (() => {
     const enriched = await Overview.enrich(nodes);
     const project = (job && job.header) || {};
 
+    // Filialnummer (führende Ziffern aus „7265 Memmingen" -> „7265") als Präfix der Bildnamen.
+    const filMatch = String(project.filiale || '').match(/\d+/);
+    const filPrefix = filMatch ? filMatch[0] + '_' : '';
+
     const zip = new JSZip();
 
     // --- Index-CSV (UTF-8 BOM, ;-getrennt) ---
@@ -51,7 +55,7 @@ const ExportZip = (() => {
       if (n.unter) parts.push(safePart(n.unter));
       const folder = parts.join('/');
       for (const p of photos) {
-        const fname = `${safePart(n.bildname)}_${String(p.seq).padStart(2, '0')}.jpg`;
+        const fname = `${filPrefix}${safePart(n.bildname)}_${String(p.seq).padStart(2, '0')}.jpg`;
         const path = `${folder}/${fname}`;
         zip.file(path, p.blob);
         manifest.photos.push({
