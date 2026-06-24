@@ -62,9 +62,14 @@
 
     <!-- ===================== BILDDOKUMENTATION ===================== -->
     <section id="view-bilddoku" class="view">
+      <div class="toolrow tpl-row">
+        <label class="tpl-label" for="templateSelect">Vorlage</label>
+        <select id="templateSelect" class="tpl-select" aria-label="Vorlage auswählen"></select>
+        <button id="tplRefreshBtn" class="btn ghost icon-only" title="Vorlagen aktualisieren">↻</button>
+      </div>
       <div class="toolrow">
         <label class="btn ghost filelabel">
-          📥 Template importieren
+          📥 Eigene Excel…
           <input id="importTemplate" type="file" accept=".xlsx" hidden />
         </label>
         <button id="overviewBtn" class="btn ghost">📊 Übersicht</button>
@@ -128,9 +133,10 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <!-- Libs (lokal vendored, offline-fähig) -->
+  <!-- Libs (lokal vendored, offline-fähig).
+       ExcelJS wird NICHT hier geladen, sondern erst bei Bedarf (Template-Import) –
+       sonst überlastet die ~950 KB große Datei den Kaltstart auf alten Geräten. -->
   <script src="lib/jszip.min.js"></script>
-  <script src="lib/exceljs.min.js"></script>
   <!-- App-Module -->
   <script src="js/db.js"></script>
   <script src="js/template.js"></script>

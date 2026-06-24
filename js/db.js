@@ -2,7 +2,7 @@
    Bilder (append-only) und Bautagebuch-Tageseinträge persistent. */
 const DB = (() => {
   const NAME = 'nfk-doku';
-  const VERSION = 1;
+  const VERSION = 2;
   let _db = null;
 
   function open() {
@@ -24,6 +24,7 @@ const DB = (() => {
         if (!db.objectStoreNames.contains('diary')) {
           db.createObjectStore('diary', { keyPath: 'datum' });
         }
+        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
       };
       req.onsuccess = () => { _db = req.result; resolve(_db); };
       req.onerror = () => reject(req.error);
@@ -91,6 +92,16 @@ const DB = (() => {
     return reqP(s.add(rec));
   }
 
+  // ---- Meta (kleine Einstellungen, z. B. gewählte Vorlage) ----
+  async function getMeta(key) {
+    const s = await tx('meta', 'readonly');
+    return reqP(s.get(key));
+  }
+  async function setMeta(key, value) {
+    const s = await tx('meta', 'readwrite');
+    return reqP(s.put(value, key));
+  }
+
   // ---- Bautagebuch-Tage ----
   async function getDiary(datum) {
     const s = await tx('diary', 'readonly');
@@ -106,6 +117,7 @@ const DB = (() => {
     getStructure, saveStructure,
     getCustomNames, addCustomName,
     countPhotos, getPhotos, getAllPhotos, addPhoto,
+    getMeta, setMeta,
     getDiary, saveDiary,
   };
 })();

@@ -10,8 +10,19 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
 - **Projekt-Stammdaten** (einmalig): Filiale/Bauvorhaben, Ort, Datum, Beauftragung,
   Techniker – werden für Bilddoku **und** Bautagebuch verwendet.
 - **Bilddokumentation**
-  - Pflicht-Struktur aus Excel-Template importieren (`Oberordner | Unterordner | Bildname | Pflichtanzahl`, max. 2 Ebenen).
-  - Eigene Bereiche/Namen im Feld anlegen – bleiben dauerhaft gespeichert und überstehen einen Template-Re-Import.
+  - **Vorlagen-Katalog**: Mehrere Vorlagen stecken als Tabs in einer Datei
+    (`assets/templates.xlsx`); jeder Tab = eine Vorlage, der Tab-Name ist der
+    Anzeigename. Beim ersten Öffnen wird die erste Vorlage automatisch geladen;
+    über das Dropdown „Vorlage" kann gewechselt werden (Spalten je Tab:
+    `Oberordner | Unterordner | Bildname | Pflichtanzahl`, max. 2 Ebenen).
+  - **Neue Vorlage hinzufügen**: in `templates.xlsx` einen weiteren Tab anlegen,
+    die 4 Spalten ausfüllen, Datei neu zu GitHub hochladen – sie erscheint dann
+    automatisch in der Auswahl (online; danach auch offline verfügbar). Mit dem
+    ↻-Knopf lässt sich die Liste manuell aktualisieren.
+  - Zusätzlich kann jederzeit eine **eigene externe `.xlsx`** importiert werden
+    (Knopf „Eigene Excel…", erstes Blatt).
+  - Eigene Bereiche/Namen im Feld anlegen – bleiben dauerhaft gespeichert und
+    bleiben beim Wechsel der Vorlage erhalten.
   - Pro Name Foto aufnehmen **oder** aus Galerie laden; automatische Komprimierung (lange Kante ≤ 2560 px, JPEG ~85 %, EXIF-Ausrichtung korrigiert).
   - Fortlaufende Benennung `<Bildname>_NN.jpg`; erledigte Positionen (Ist ≥ Pflicht) werden ausgegraut, weitere Bilder bleiben erlaubt (append-only, kein Löschen/Überschreiben).
   - Übersichts-Button: offene vs. erledigte Positionen.
@@ -50,7 +61,7 @@ js/bautagebuch.js                 Vorlagen-Befüllung + .xlsx-Export
 lib/jszip.min.js, lib/exceljs.min.js
 sw.js, manifest.webmanifest       PWA / Offline
 assets/vorlage_bautagebuch.xlsx   Befüll-Vorlage (Original)
-assets/beispiel_bilddoku_template.xlsx   Beispiel-Struktur (importierbar)
+assets/templates.xlsx             Vorlagen-Katalog (jeder Tab = eine Vorlage)
 assets/icon-192.png, icon-512.png, logo.png
 tools/                            Hilfsskripte (Vorlage/Icons erzeugen, Verifikation)
 ```
@@ -86,5 +97,5 @@ selbst angelegte Namen bleiben erhalten.
 
 ## Hilfsskripte (`tools/`, optional, benötigen Python)
 
-- `make_example_template.py` – erzeugt `assets/beispiel_bilddoku_template.xlsx`.
+- `make_templates.py` – erzeugt den Vorlagen-Katalog `assets/templates.xlsx`.
 - `verify_bautagebuch.py` – repliziert die Befüll-Logik und prüft Zelltypen + Logo-Erhalt.

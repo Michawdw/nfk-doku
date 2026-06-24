@@ -3,6 +3,22 @@
 const Structure = (() => {
   const SEP = '␟'; // Trennzeichen für stabile Knoten-Keys
 
+  // ExcelJS wird erst bei Bedarf nachgeladen (nicht beim App-Start), damit der
+  // Kaltstart auf alten Geräten nicht durch die ~950 KB große Datei blockiert.
+  let _excelPromise = null;
+  function loadExcelJS() {
+    if (window.ExcelJS) return Promise.resolve();
+    if (_excelPromise) return _excelPromise;
+    _excelPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'lib/exceljs.min.js';
+      s.onload = () => resolve();
+      s.onerror = () => { _excelPromise = null; reject(new Error('ExcelJS konnte nicht geladen werden')); };
+      document.head.appendChild(s);
+    });
+    return _excelPromise;
+  }
+
   function makeKey(ober, unter, bildname) {
     return [ober, unter || '', bildname].join(SEP);
   }
@@ -20,12 +36,17 @@ const Structure = (() => {
     return String(v);
   }
 
+  // URL der mitgelieferten Vorlagen-Sammlung (jeder Tab = eine Vorlage).
+  const CATALOG_URL = 'assets/templates.xlsx';
+
   // Liest ein importiertes Template (ArrayBuffer) -> Array von Knoten.
-  async function parseWorkbook(arrayBuffer) {
+  // sheetName optional: bestimmtes Tab, sonst erstes Blatt.
+  async function parseWorkbook(arrayBuffer, sheetName) {
+    await loadExcelJS();
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(arrayBuffer);
-    const ws = wb.worksheets[0];
-    if (!ws) throw new Error('Keine Tabelle im Template gefunden.');
+    const ws = sheetName ? wb.getWorksheet(sheetName) : wb.worksheets[0];
+    if (!ws) throw new Error('Vorlage/Tab nicht gefunden: ' + (sheetName || '(erstes Blatt)'));
 
     const nodes = [];
     let headerSeen = false;
@@ -65,12 +86,46 @@ const Structure = (() => {
     return nodes;
   }
 
-  // Importiert und speichert die Struktur (ersetzt nur 'structure', nicht 'customNames').
+  // Importiert eine externe .xlsx-Datei (erstes Blatt). Markiert „Eigener Import".
   async function importFile(file) {
     const buf = await file.arrayBuffer();
     const nodes = await parseWorkbook(buf);
     await DB.saveStructure(nodes);
+    await DB.setMeta('selectedTemplate', EXTERNAL_LABEL);
     return nodes;
+  }
+
+  const EXTERNAL_LABEL = '(Eigener Import)';
+
+  // Lädt die Vorlagen-Sammlung als ArrayBuffer. Online: frisch vom Netz (neue Tabs
+  // sichtbar); offline fällt der Service Worker auf die zwischengespeicherte Datei zurück.
+  async function fetchCatalogBuffer() {
+    const resp = await fetch(CATALOG_URL, { cache: 'no-store' });
+    if (!resp.ok) throw new Error('Vorlagen-Datei nicht gefunden.');
+    return resp.arrayBuffer();
+  }
+
+  // Liefert die Liste der verfügbaren Vorlagen (Tab-Namen aus templates.xlsx).
+  async function listTemplates() {
+    await loadExcelJS();
+    const buf = await fetchCatalogBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    return wb.worksheets.map((ws) => ws.name);
+  }
+
+  // Importiert eine Vorlage aus der Sammlung anhand des Tab-Namens.
+  // Ersetzt nur 'structure'; eigene Namen ('customNames') bleiben erhalten.
+  async function importFromCatalog(sheetName) {
+    const buf = await fetchCatalogBuffer();
+    const nodes = await parseWorkbook(buf, sheetName);
+    await DB.saveStructure(nodes);
+    await DB.setMeta('selectedTemplate', sheetName);
+    return nodes;
+  }
+
+  async function getSelectedTemplate() {
+    return (await DB.getMeta('selectedTemplate')) || null;
   }
 
   // Liefert die zusammengeführte, anzuzeigende Knotenliste: Template ∪ eigene Namen.
@@ -95,5 +150,8 @@ const Structure = (() => {
     return obers;
   }
 
-  return { SEP, makeKey, parseWorkbook, importFile, getMerged, groupForDisplay };
+  return {
+    SEP, makeKey, parseWorkbook, importFile, getMerged, groupForDisplay,
+    listTemplates, importFromCatalog, getSelectedTemplate, EXTERNAL_LABEL,
+  };
 })();

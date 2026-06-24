@@ -20,7 +20,7 @@ const App = (() => {
     $('#topTitle').textContent = viewTitles[viewId] || 'NFK Doku';
     $('#backBtn').hidden = (viewId === 'view-start');
     window.scrollTo(0, 0);
-    if (viewId === 'view-bilddoku') renderTree();
+    if (viewId === 'view-bilddoku') enterBilddoku();
     if (viewId === 'view-bautagebuch') initDiaryView();
   }
 
@@ -144,6 +144,76 @@ const App = (() => {
     activeUrls = [];
   }
 
+  let catalogNames = null; // gemerkte Tab-Liste der Vorlagen-Sammlung
+
+  // Wird beim Öffnen der Bilddoku-Ansicht aufgerufen: Vorlagen-Katalog laden,
+  // beim allerersten Mal automatisch die Standard-Vorlage importieren, Dropdown füllen.
+  async function enterBilddoku() {
+    await renderTree(); // sofort zeigen, was schon da ist (auch offline ohne ExcelJS)
+    try {
+      if (!catalogNames) catalogNames = await Structure.listTemplates();
+    } catch (e) {
+      console.warn('Vorlagen-Katalog nicht ladbar:', e);
+    }
+
+    const haveStructure = (await DB.getStructure()).length > 0;
+    let selected = await Structure.getSelectedTemplate();
+
+    // Erststart: Standard-Vorlage (erstes Tab) automatisch importieren.
+    if (!haveStructure && catalogNames && catalogNames.length) {
+      const def = (selected && catalogNames.indexOf(selected) !== -1) ? selected : catalogNames[0];
+      try {
+        await Structure.importFromCatalog(def);
+        selected = def;
+        await renderTree();
+      } catch (e) { console.warn('Auto-Import fehlgeschlagen:', e); }
+    }
+
+    populateTemplateSelect(selected);
+  }
+
+  function populateTemplateSelect(selected) {
+    const sel = $('#templateSelect');
+    const names = (catalogNames || []).slice();
+    // „Eigener Import" als Option zeigen, falls aktiv und nicht im Katalog.
+    if (selected && selected !== '' && names.indexOf(selected) === -1) names.unshift(selected);
+    sel.innerHTML = names.map((n) =>
+      `<option value="${escAttr(n)}"${n === selected ? ' selected' : ''}>${escHtml(n)}</option>`).join('');
+    if (!names.length) sel.innerHTML = '<option value="">— keine Vorlage —</option>';
+  }
+
+  async function onTemplateChange() {
+    const name = $('#templateSelect').value;
+    if (!name || name === Structure.EXTERNAL_LABEL) return;
+    toast('Lade Vorlage…');
+    try {
+      await Structure.importFromCatalog(name);
+      await renderTree();
+      toast('Vorlage „' + name + '" geladen');
+    } catch (e) {
+      console.error(e);
+      toast('Vorlage konnte nicht geladen werden');
+    }
+  }
+
+  async function refreshCatalog() {
+    toast('Aktualisiere Vorlagen…');
+    try {
+      catalogNames = await Structure.listTemplates();
+      const selected = await Structure.getSelectedTemplate();
+      // Aktuell gewählte Vorlage neu einlesen (falls Tab geändert wurde).
+      if (selected && catalogNames.indexOf(selected) !== -1) {
+        await Structure.importFromCatalog(selected);
+        await renderTree();
+      }
+      populateTemplateSelect(selected);
+      toast(catalogNames.length + ' Vorlage(n) verfügbar');
+    } catch (e) {
+      console.error(e);
+      toast('Aktualisieren fehlgeschlagen (offline?)');
+    }
+  }
+
   async function renderTree() {
     const info = $('#templateInfo');
     const tree = $('#structureTree');
@@ -152,8 +222,8 @@ const App = (() => {
     const nodes = await Structure.getMerged();
     const tplCount = (await DB.getStructure()).length;
     info.textContent = nodes.length
-      ? `${nodes.length} Positionen (${tplCount} aus Template).`
-      : 'Noch kein Template importiert. Beispiel: assets/beispiel_bilddoku_template.xlsx';
+      ? `${nodes.length} Positionen (${tplCount} aus Vorlage, ${nodes.length - tplCount} eigene).`
+      : 'Vorlage wird geladen … (oben auswählen oder eigene Excel importieren).';
 
     if (nodes.length === 0) { tree.innerHTML = ''; return; }
 
@@ -286,7 +356,8 @@ const App = (() => {
     try {
       const nodes = await Structure.importFile(file);
       await renderTree();
-      toast(`Template importiert: ${nodes.length} Positionen`);
+      populateTemplateSelect(Structure.EXTERNAL_LABEL);
+      toast(`Eigene Vorlage importiert: ${nodes.length} Positionen`);
     } catch (err) {
       console.error(err);
       toast('Import fehlgeschlagen: ' + (err.message || err));
@@ -311,7 +382,7 @@ const App = (() => {
     const techs = (project && project.techniker) || [];
 
     if (saved) {
-      f.anzTechniker.value = saved.anzTechniker ?? techs.length;
+      f.anzTechniker.value = (saved.anzTechniker != null) ? saved.anzTechniker : techs.length;
       f.taetigkeiten.value = saved.taetigkeiten || '';
       f.behinderungen.value = saved.behinderungen || '';
       f.vorkommnisse.value = saved.vorkommnisse || '';
@@ -410,6 +481,8 @@ const App = (() => {
     $('#projectForm').addEventListener('submit', saveProjectForm);
     $('#addTechBtn').onclick = () => $('#techList').appendChild(techRow(''));
     $('#importTemplate').addEventListener('change', importTemplate);
+    $('#templateSelect').addEventListener('change', onTemplateChange);
+    $('#tplRefreshBtn').onclick = refreshCatalog;
     $('#addCustomBtn').onclick = addCustomNameFlow;
     $('#overviewBtn').onclick = () => Overview.show();
     $('#exportZipBtn').onclick = async () => {
@@ -428,14 +501,24 @@ const App = (() => {
   }
 
   async function init() {
-    setupPhotoInputs();
-    bindEvents();
-    updateNetDot();
-    window.addEventListener('online', updateNetDot);
-    window.addEventListener('offline', updateNetDot);
-    await loadProjectForm();
-    show('view-start');
-
+    // Robust starten: UI bindet sich auch dann, wenn die Daten-Initialisierung
+    // (z. B. IndexedDB) auf einem Gerät klemmt – die App darf nie hängenbleiben.
+    try {
+      setupPhotoInputs();
+      bindEvents();
+      updateNetDot();
+      window.addEventListener('online', updateNetDot);
+      window.addEventListener('offline', updateNetDot);
+      show('view-start');
+    } catch (e) {
+      console.error('Init-Fehler (UI):', e);
+    }
+    try {
+      await loadProjectForm();
+    } catch (e) {
+      console.error('Init-Fehler (Projektdaten):', e);
+      toast('Hinweis: Gespeicherte Daten konnten nicht geladen werden.');
+    }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW-Registrierung fehlgeschlagen', e));
     }
