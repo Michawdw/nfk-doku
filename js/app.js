@@ -74,6 +74,30 @@ const App = (() => {
     };
   }
 
+  // Bestätigungs-Dialog. Liefert ein Promise<boolean> (true = bestätigt).
+  function openConfirm(title, html, okLabel, danger) {
+    return new Promise((resolve) => {
+      $('#modalTitle').textContent = title;
+      $('#modalBody').innerHTML = html;
+      const cancel = $('#modalCancel'), ok = $('#modalOk'), overlay = $('#modalOverlay');
+      cancel.hidden = false;
+      cancel.textContent = 'Abbrechen';
+      ok.textContent = okLabel || 'OK';
+      ok.classList.toggle('danger', !!danger);
+      overlay.hidden = false;
+      const finish = (val) => {
+        overlay.hidden = true;
+        ok.classList.remove('danger');
+        ok.textContent = 'OK';
+        overlay.onclick = null;
+        resolve(val);
+      };
+      cancel.onclick = () => finish(false);
+      ok.onclick = () => finish(true);
+      overlay.onclick = (e) => { if (e.target === overlay) finish(false); }; // Tippen daneben = Abbrechen
+    });
+  }
+
   async function shareFile(blob, filename, mime, title) {
     const file = new File([blob], filename, { type: mime });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -143,9 +167,11 @@ const App = (() => {
           <div class="job-name">${escHtml(j.name || j.header.filiale || 'Auftrag')}</div>
           <div class="job-sub">${escHtml(sub)}</div>
         </div>
-        <button class="job-edit" title="Umbenennen">✎</button>`;
+        <button class="job-edit" title="Umbenennen">✎</button>
+        <button class="job-del" title="Löschen">🗑</button>`;
       div.querySelector('.job-main').onclick = () => { if (!active) switchJob(j.id); };
       div.querySelector('.job-edit').onclick = (e) => { e.stopPropagation(); renameJob(j); };
+      div.querySelector('.job-del').onclick = (e) => { e.stopPropagation(); deleteJobFlow(j); };
       cont.appendChild(div);
     }
   }
@@ -162,6 +188,40 @@ const App = (() => {
       await renderJobList();
       toast('Umbenannt');
     });
+  }
+
+  async function deleteJobFlow(job) {
+    const label = escHtml(job.name || job.header.filiale || 'Auftrag');
+    const photoCount = (await DB.getAllPhotos(job.id)).length;
+
+    // 1. Abfrage
+    const ok1 = await openConfirm(
+      'Auftrag löschen?',
+      `<p>Auftrag <b>„${label}"</b> wirklich löschen?</p>
+       <p class="hint">Dabei werden <b>${photoCount} Bild(er)</b> und alle Daten dieses
+       Auftrags (Struktur, Bautagebuch-Tage) <b>unwiderruflich</b> gelöscht.</p>`,
+      'Weiter zum Löschen', true);
+    if (!ok1) return;
+
+    // 2. Abfrage (Sicherheit)
+    const ok2 = await openConfirm(
+      'Wirklich endgültig löschen?',
+      `<p>Letzte Sicherheitsabfrage: <b>„${label}"</b> endgültig löschen?</p>
+       <p class="hint">Das kann <b>nicht rückgängig</b> gemacht werden.</p>`,
+      'Endgültig löschen', true);
+    if (!ok2) return;
+
+    await DB.deleteJob(job.id);
+
+    // War es der aktive Auftrag? Dann auf einen anderen wechseln (oder neuen anlegen).
+    if (currentJob && currentJob.id === job.id) {
+      currentJob = null;
+      await DB.setCurrentJobId(null);
+      catalogNames = null;
+      await ensureCurrentJob();
+    }
+    await loadStartView();
+    toast('Auftrag gelöscht');
   }
 
   async function newJobFlow() {

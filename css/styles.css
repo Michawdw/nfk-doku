@@ -102,6 +102,7 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
   cursor: pointer;
 }
 .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.danger { background: var(--warn); border-color: var(--warn); color: #fff; }
 .btn.ghost { background: #fff; }
 .btn.wide { width: 100%; margin-top: 14px; }
 .btn:active { transform: translatey(1px); }
@@ -138,7 +139,8 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .job-name { font-weight: 700; word-break: break-word; }
 .job-item.active .job-name { color: var(--brand); }
 .job-sub { font-size: 13px; color: var(--muted); }
-.job-edit { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 16px; }
+.job-edit, .job-del { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 16px; flex: 0 0 auto; }
+.job-del { border-color: #f3c4be; background: #fdecea; }
 .sub-current { font-size: 13px; font-weight: 400; color: var(--muted); }
 
 /* ---------- Big choice ---------- */
