@@ -125,6 +125,22 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
   color: var(--text);
 }
 
+/* ---------- Auftragsliste ---------- */
+.jobs-head { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 4px; }
+.jobs-head h2 { margin: 0; }
+.job-list { display: grid; gap: 8px; margin: 6px 0 4px; }
+.job-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff;
+}
+.job-item.active { border-color: var(--brand); background: #eaf2fb; }
+.job-main { flex: 1; min-width: 0; cursor: pointer; }
+.job-name { font-weight: 700; word-break: break-word; }
+.job-item.active .job-name { color: var(--brand); }
+.job-sub { font-size: 13px; color: var(--muted); }
+.job-edit { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 16px; }
+.sub-current { font-size: 13px; font-weight: 400; color: var(--muted); }
+
 /* ---------- Big choice ---------- */
 .bigchoice { display: grid; gap: 14px; margin-top: 8px; }
 .bigbtn {

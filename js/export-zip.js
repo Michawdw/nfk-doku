@@ -21,8 +21,9 @@ const ExportZip = (() => {
       App.toast('Keine Struktur vorhanden.');
       return;
     }
+    const job = App.getCurrentJob();
     const enriched = await Overview.enrich(nodes);
-    const project = (await DB.getProject()) || {};
+    const project = (job && job.header) || {};
 
     const zip = new JSZip();
 
@@ -38,7 +39,7 @@ const ExportZip = (() => {
       ].map(csvCell).join(';'));
 
       // --- Bilder in Ordnerstruktur ablegen ---
-      const photos = await DB.getPhotos(n.key);
+      const photos = await DB.getPhotos(job.id, n.key);
       const parts = [safePart(n.ober)];
       if (n.unter) parts.push(safePart(n.unter));
       const folder = parts.join('/');

@@ -4,9 +4,13 @@ const App = (() => {
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  let project = null;
+  let currentJob = null;    // aktiver Auftrag (im Speicher gehalten)
   let activeUrls = [];      // Object-URLs der Thumbnails (für Revoke)
   let currentNode = null;   // Knoten für die nächste Foto-Auswahl
+
+  // Zugriff für andere Module (Structure/Photos/Overview/ExportZip/Handover).
+  function getCurrentJob() { return currentJob; }
+  async function saveCurrentJob() { if (currentJob) await DB.saveJob(currentJob); }
 
   // ---------------------------------------------------------------- Navigation
   const viewTitles = {
@@ -103,35 +107,103 @@ const App = (() => {
     return div;
   }
 
-  async function loadProjectForm() {
-    project = await DB.getProject();
+  // ----------------------------------------------------- Auftrags-Verwaltung
+  // Stellt sicher, dass ein aktiver Auftrag existiert (legt sonst „Auftrag 1" an).
+  async function ensureCurrentJob() {
+    const jobs = await DB.listJobs();
+    let id = await DB.getCurrentJobId();
+    let job = id ? jobs.find((j) => j.id === id) : null;
+    if (!job) job = jobs[0] || null;
+    if (!job) job = await DB.createJob('Auftrag 1');
+    currentJob = job;
+    await DB.setCurrentJobId(job.id);
+  }
+
+  async function switchJob(id) {
+    const job = await DB.getJob(id);
+    if (!job) return;
+    currentJob = job;
+    await DB.setCurrentJobId(id);
+    catalogNames = null; // Katalog/Vorlage neu für diesen Auftrag laden
+    await loadStartView();
+    toast('Auftrag „' + (job.name || job.header.filiale || '') + '" geöffnet');
+  }
+
+  async function renderJobList() {
+    const cont = $('#jobList');
+    if (!cont) return;
+    const jobs = await DB.listJobs();
+    cont.innerHTML = '';
+    for (const j of jobs) {
+      const active = currentJob && j.id === currentJob.id;
+      const div = document.createElement('div');
+      div.className = 'job-item' + (active ? ' active' : '');
+      const sub = [j.header.filiale, j.header.ort, j.header.datum].filter(Boolean).join(' · ');
+      div.innerHTML = `<div class="job-main">
+          <div class="job-name">${escHtml(j.name || j.header.filiale || 'Auftrag')}</div>
+          <div class="job-sub">${escHtml(sub)}</div>
+        </div>
+        <button class="job-edit" title="Umbenennen">✎</button>`;
+      div.querySelector('.job-main').onclick = () => { if (!active) switchJob(j.id); };
+      div.querySelector('.job-edit').onclick = (e) => { e.stopPropagation(); renameJob(j); };
+      cont.appendChild(div);
+    }
+  }
+
+  function renameJob(job) {
+    openFormModal('Auftrag umbenennen', [
+      { name: 'name', label: 'Name', value: job.name || '', required: true },
+    ], async (data) => {
+      const name = (data.name || '').trim();
+      if (!name) return false;
+      job.name = name;
+      await DB.saveJob(job);
+      if (currentJob && currentJob.id === job.id) currentJob.name = name;
+      await renderJobList();
+      toast('Umbenannt');
+    });
+  }
+
+  async function newJobFlow() {
+    const job = await DB.createJob('Auftrag ' + ((await DB.listJobs()).length + 1));
+    currentJob = job;
+    await DB.setCurrentJobId(job.id);
+    catalogNames = null;
+    await loadStartView();
+    toast('Neuer Auftrag angelegt');
+  }
+
+  // Füllt Auftragsliste + Projektkopf-Formular des aktiven Auftrags.
+  async function loadStartView() {
+    await renderJobList();
+    const h = (currentJob && currentJob.header) || {};
     const f = $('#projectForm');
     const list = $('#techList');
     list.innerHTML = '';
-    if (project) {
-      f.filiale.value = project.filiale || '';
-      f.ort.value = project.ort || '';
-      f.datum.value = project.datum || '';
-      f.beauftragung.value = project.beauftragung || 'NFK Vollverkabelung';
-      (project.techniker && project.techniker.length ? project.techniker : ['']).forEach((t) => list.appendChild(techRow(t)));
-    } else {
-      f.datum.value = new Date().toISOString().slice(0, 10);
-      list.appendChild(techRow(''));
-    }
+    f.filiale.value = h.filiale || '';
+    f.ort.value = h.ort || '';
+    f.datum.value = h.datum || new Date().toISOString().slice(0, 10);
+    f.beauftragung.value = h.beauftragung || 'NFK Vollverkabelung';
+    (h.techniker && h.techniker.length ? h.techniker : ['']).forEach((t) => list.appendChild(techRow(t)));
   }
 
   async function saveProjectForm(e) {
     e.preventDefault();
     const f = e.target;
     const techniker = $$('#techList input').map((i) => i.value.trim()).filter(Boolean);
-    project = {
+    currentJob.header = {
       filiale: f.filiale.value.trim(),
       ort: f.ort.value.trim(),
       datum: f.datum.value,
       beauftragung: f.beauftragung.value.trim() || 'NFK Vollverkabelung',
       techniker,
     };
-    await DB.saveProject(project);
+    // Auftragsname an Filiale koppeln, solange er nicht manuell vergeben wurde.
+    if (!currentJob.name || /^Auftrag \d+$/.test(currentJob.name)) {
+      currentJob.name = currentJob.header.filiale || currentJob.name;
+    }
+    await DB.saveJob(currentJob);
+    await renderJobList();
     const saved = $('#projectSaved');
     saved.hidden = false;
     setTimeout(() => { saved.hidden = true; }, 2000);
@@ -156,7 +228,7 @@ const App = (() => {
       console.warn('Vorlagen-Katalog nicht ladbar:', e);
     }
 
-    const haveStructure = (await DB.getStructure()).length > 0;
+    const haveStructure = ((currentJob && currentJob.structure) || []).length > 0;
     let selected = await Structure.getSelectedTemplate();
 
     // Erststart: Standard-Vorlage (erstes Tab) automatisch importieren.
@@ -220,7 +292,7 @@ const App = (() => {
     revokeThumbs();
 
     const nodes = await Structure.getMerged();
-    const tplCount = (await DB.getStructure()).length;
+    const tplCount = ((currentJob && currentJob.structure) || []).length;
     info.textContent = nodes.length
       ? `${nodes.length} Positionen (${tplCount} aus Vorlage, ${nodes.length - tplCount} eigene).`
       : 'Vorlage wird geladen … (oben auswählen oder eigene Excel importieren).';
@@ -265,7 +337,7 @@ const App = (() => {
     row.querySelector('.gal-btn').onclick = () => pickPhoto(n, false);
 
     const thumbs = row.querySelector('.thumbs');
-    const photos = await DB.getPhotos(n.key);
+    const photos = await DB.getPhotos(currentJob.id, n.key);
     for (const p of photos) {
       const url = URL.createObjectURL(p.blob);
       activeUrls.push(url);
@@ -342,7 +414,7 @@ const App = (() => {
         key: Structure.makeKey(ober, unter, bildname),
         ober, unter, bildname, pflicht, source: 'custom',
       };
-      await DB.addCustomName(node);
+      await Structure.addCustomName(node);
       await renderTree();
       toast('Name angelegt');
     });
@@ -368,9 +440,9 @@ const App = (() => {
   let diaryDate = null;
 
   async function initDiaryView() {
-    project = await DB.getProject();
     const f = $('#diaryForm');
-    if (!diaryDate) diaryDate = (project && project.datum) || new Date().toISOString().slice(0, 10);
+    const h = (currentJob && currentJob.header) || {};
+    if (!diaryDate) diaryDate = h.datum || new Date().toISOString().slice(0, 10);
     f.datum.value = diaryDate;
     await loadDiaryForDate(diaryDate);
     f.datum.onchange = async () => { diaryDate = f.datum.value; await loadDiaryForDate(diaryDate); };
@@ -378,8 +450,8 @@ const App = (() => {
 
   async function loadDiaryForDate(datum) {
     const f = $('#diaryForm');
-    const saved = await DB.getDiary(datum);
-    const techs = (project && project.techniker) || [];
+    const saved = await DB.getDiary(currentJob.id, datum);
+    const techs = (currentJob && currentJob.header && currentJob.header.techniker) || [];
 
     if (saved) {
       f.anzTechniker.value = (saved.anzTechniker != null) ? saved.anzTechniker : techs.length;
@@ -399,7 +471,7 @@ const App = (() => {
   }
 
   function defaultOrtDatum(datum) {
-    const ort = (project && project.ort) || '';
+    const ort = (currentJob && currentJob.header && currentJob.header.ort) || '';
     if (!datum) return ort;
     const [y, m, d] = datum.split('-');
     return `${ort} ${d}.${m}.${y}`.trim();
@@ -449,7 +521,7 @@ const App = (() => {
   async function saveDiary() {
     const model = gatherDiary();
     if (!model.datum) { toast('Datum fehlt'); return; }
-    await DB.saveDiary(model);
+    await DB.saveDiary(currentJob.id, model);
     const s = $('#diarySaved');
     s.hidden = false; setTimeout(() => { s.hidden = true; }, 2000);
     toast('Tag gespeichert');
@@ -458,12 +530,12 @@ const App = (() => {
   async function exportDiary() {
     const model = gatherDiary();
     if (!model.datum) { toast('Datum fehlt'); return; }
-    await DB.saveDiary(model); // immer mitspeichern
-    if (!project) project = await DB.getProject();
+    await DB.saveDiary(currentJob.id, model); // immer mitspeichern
+    const h = (currentJob && currentJob.header) || {};
     const full = Object.assign({}, model, {
-      filiale: (project && project.filiale) || '',
-      ort: (project && project.ort) || '',
-      beauftragung: (project && project.beauftragung) || 'NFK Vollverkabelung',
+      filiale: h.filiale || '',
+      ort: h.ort || '',
+      beauftragung: h.beauftragung || 'NFK Vollverkabelung',
     });
     try {
       const name = await Bautagebuch.exportFile(full);
@@ -480,6 +552,7 @@ const App = (() => {
     $$('[data-go]').forEach((b) => b.onclick = () => show(b.dataset.go));
     $('#projectForm').addEventListener('submit', saveProjectForm);
     $('#addTechBtn').onclick = () => $('#techList').appendChild(techRow(''));
+    $('#newJobBtn').onclick = newJobFlow;
     $('#importTemplate').addEventListener('change', importTemplate);
     $('#templateSelect').addEventListener('change', onTemplateChange);
     $('#tplRefreshBtn').onclick = refreshCatalog;
@@ -489,6 +562,8 @@ const App = (() => {
       toast('Erzeuge ZIP…');
       try { await ExportZip.build(); } catch (e) { console.error(e); toast('ZIP-Fehler: ' + (e.message || e)); }
     };
+    $('#handoverExportBtn').onclick = handoverExport;
+    $('#handoverImport').addEventListener('change', handoverImport);
     $('#diarySaveBtn').onclick = saveDiary;
     $('#diaryExportBtn').onclick = exportDiary;
     $('#modalOverlay').addEventListener('click', (e) => {
@@ -514,18 +589,54 @@ const App = (() => {
       console.error('Init-Fehler (UI):', e);
     }
     try {
-      await loadProjectForm();
+      await ensureCurrentJob();
+      await loadStartView();
     } catch (e) {
-      console.error('Init-Fehler (Projektdaten):', e);
+      console.error('Init-Fehler (Auftragsdaten):', e);
       toast('Hinweis: Gespeicherte Daten konnten nicht geladen werden.');
     }
+    // Persistenten Speicher anfordern (schützt Bilder vor automatischer Löschung).
+    try {
+      if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
+    } catch (e) { /* best effort */ }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW-Registrierung fehlgeschlagen', e));
+    }
+  }
+
+  // ----------------------------------------------------------- Übergabe (xlsx)
+  async function handoverExport() {
+    toast('Erzeuge Übergabe-Datei…');
+    try {
+      const name = await Handover.exportXlsx(currentJob);
+      toast('Übergabe exportiert: ' + name);
+    } catch (e) {
+      console.error(e);
+      toast('Übergabe-Export fehlgeschlagen: ' + (e.message || e));
+    }
+  }
+
+  async function handoverImport(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    toast('Lese Übergabe-Datei…');
+    try {
+      const job = await Handover.importXlsx(file);
+      currentJob = job;
+      await DB.setCurrentJobId(job.id);
+      catalogNames = null;
+      show('view-start');
+      await loadStartView();
+      toast('Auftrag übernommen: ' + (job.name || ''));
+    } catch (err) {
+      console.error(err);
+      toast('Import fehlgeschlagen: ' + (err.message || err));
     }
   }
 
   document.addEventListener('DOMContentLoaded', init);
 
   // Öffentlich für andere Module:
-  return { toast, openInfoModal, openFormModal, shareFile, show };
+  return { toast, openInfoModal, openFormModal, shareFile, show, getCurrentJob, saveCurrentJob };
 })();

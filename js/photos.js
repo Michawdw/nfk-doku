@@ -99,11 +99,16 @@ const Photos = (() => {
   }
 
   // Verarbeitet eine Auswahl und speichert sie dem Knoten zugeordnet (append-only).
+  // Nummerierung läuft über eine evtl. übernommene Vor-Anzahl (priorCount) hinaus weiter,
+  // damit Bilder verschiedener Teams kollisionsfrei aufeinanderfolgen.
   async function addToNode(node, file) {
+    const job = App.getCurrentJob();
     const blob = await compress(file);
-    const existing = await DB.countPhotos(node.key);
-    const seq = existing + 1; // fortlaufend über tatsächliche Anzahl
+    const prior = (job.priorCounts && job.priorCounts[node.key]) || 0;
+    const local = await DB.countPhotos(job.id, node.key);
+    const seq = prior + local + 1;
     await DB.addPhoto({
+      jobId: job.id,
       nodeKey: node.key,
       seq,
       blob,

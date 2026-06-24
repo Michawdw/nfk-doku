@@ -7,8 +7,24 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
 
 ## Funktionsumfang
 
-- **Projekt-Stammdaten** (einmalig): Filiale/Bauvorhaben, Ort, Datum, Beauftragung,
-  Techniker – werden für Bilddoku **und** Bautagebuch verwendet.
+- **Mehrere Aufträge**: Auf der Startseite werden Aufträge als Liste geführt
+  („+ Neuer Auftrag", antippen zum Wechseln, ✎ zum Umbenennen). Jeder Auftrag hat eigene
+  Stammdaten, Bilddoku-Struktur, Bilder und Bautagebuch-Tage. Baustellen über Wochen/mit
+  Unterbrechungen bleiben so getrennt und jederzeit abrufbar.
+- **Projekt-Stammdaten** (je Auftrag): Filiale/Bauvorhaben, Ort, Datum, Beauftragung,
+  Techniker – werden für Bilddoku **und** Bautagebuch des Auftrags verwendet.
+- **Bildersicherheit**: Bilder liegen in IndexedDB; die App fordert beim Start
+  **persistenten Speicher** an (Schutz vor automatischer Löschung). Echtes Backup =
+  regelmäßiger **Bild-ZIP-Export** (enthält die Fotos). Beim Deinstallieren der App oder
+  Löschen der Browserdaten gehen lokale Daten verloren – daher vor solchen Aktionen ZIP
+  exportieren.
+- **Übergabe an anderes Team / Innendienst-Auswertung**: „Übergabe export (.xlsx)" erzeugt
+  eine kleine Excel-Datei mit dem Zwischenstand (Position, Pflicht, Ist, Status) **ohne
+  Bilder**. Der Innendienst kann sie direkt auswerten; ein anderes Team importiert sie per
+  „Übergabe import" → sieht offene/erledigte Pflichtbilder und die **Foto-Nummerierung läuft
+  nahtlos weiter** (`_03`, `_04`, …), sodass keine Doppelbilder entstehen und die Bild-ZIPs
+  beider Teams im Büro kollisionsfrei zusammenpassen. (Sequenzielle Übergabe: Team A →
+  Team B, kein gleichzeitiges Parallel-Arbeiten am selben Auftrag.)
 - **Bilddokumentation**
   - **Vorlagen-Katalog**: Mehrere Vorlagen stecken als Tabs in einer Datei
     (`assets/templates.xlsx`); jeder Tab = eine Vorlage, der Tab-Name ist der
@@ -58,6 +74,7 @@ js/photos.js                      EXIF-Orientation, Komprimierung, Nummerierung
 js/overview.js                    Status/Übersicht
 js/export-zip.js                  ZIP-Export + Index-CSV + Share
 js/bautagebuch.js                 Vorlagen-Befüllung + .xlsx-Export
+js/handover.js                    Übergabe-/Übersicht-Excel: Export + Import
 lib/jszip.min.js, lib/exceljs.min.js
 sw.js, manifest.webmanifest       PWA / Offline
 assets/vorlage_bautagebuch.xlsx   Befüll-Vorlage (Original)

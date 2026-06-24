@@ -90,12 +90,22 @@ const Structure = (() => {
   async function importFile(file) {
     const buf = await file.arrayBuffer();
     const nodes = await parseWorkbook(buf);
-    await DB.saveStructure(nodes);
-    await DB.setMeta('selectedTemplate', EXTERNAL_LABEL);
+    const job = App.getCurrentJob();
+    job.structure = nodes;
+    job.selectedTemplate = EXTERNAL_LABEL;
+    await App.saveCurrentJob();
     return nodes;
   }
 
   const EXTERNAL_LABEL = '(Eigener Import)';
+
+  // Legt einen eigenen Namen/Bereich im aktuellen Auftrag an (bleibt bei Vorlagenwechsel erhalten).
+  async function addCustomName(node) {
+    const job = App.getCurrentJob();
+    if (!job.customNames) job.customNames = [];
+    if (!job.customNames.some((c) => c.key === node.key)) job.customNames.push(node);
+    await App.saveCurrentJob();
+  }
 
   // Lädt die Vorlagen-Sammlung als ArrayBuffer. Online: frisch vom Netz (neue Tabs
   // sichtbar); offline fällt der Service Worker auf die zwischengespeicherte Datei zurück.
@@ -115,22 +125,28 @@ const Structure = (() => {
   }
 
   // Importiert eine Vorlage aus der Sammlung anhand des Tab-Namens.
-  // Ersetzt nur 'structure'; eigene Namen ('customNames') bleiben erhalten.
+  // Ersetzt nur die Struktur des Auftrags; eigene Namen bleiben erhalten.
   async function importFromCatalog(sheetName) {
     const buf = await fetchCatalogBuffer();
     const nodes = await parseWorkbook(buf, sheetName);
-    await DB.saveStructure(nodes);
-    await DB.setMeta('selectedTemplate', sheetName);
+    const job = App.getCurrentJob();
+    job.structure = nodes;
+    job.selectedTemplate = sheetName;
+    await App.saveCurrentJob();
     return nodes;
   }
 
   async function getSelectedTemplate() {
-    return (await DB.getMeta('selectedTemplate')) || null;
+    const job = App.getCurrentJob();
+    return (job && job.selectedTemplate) || null;
   }
 
-  // Liefert die zusammengeführte, anzuzeigende Knotenliste: Template ∪ eigene Namen.
-  async function getMerged() {
-    const [tpl, custom] = await Promise.all([DB.getStructure(), DB.getCustomNames()]);
+  // Liefert die zusammengeführte, anzuzeigende Knotenliste: Vorlage ∪ eigene Namen
+  // (aus dem aktuellen Auftrag).
+  function getMerged() {
+    const job = App.getCurrentJob();
+    const tpl = (job && job.structure) || [];
+    const custom = (job && job.customNames) || [];
     const map = new Map();
     for (const n of tpl) map.set(n.key, n);
     for (const c of custom) if (!map.has(c.key)) map.set(c.key, c); // eigene ergänzen, keine Doppel
@@ -151,7 +167,7 @@ const Structure = (() => {
   }
 
   return {
-    SEP, makeKey, parseWorkbook, importFile, getMerged, groupForDisplay,
-    listTemplates, importFromCatalog, getSelectedTemplate, EXTERNAL_LABEL,
+    SEP, makeKey, parseWorkbook, importFile, addCustomName, getMerged, groupForDisplay,
+    listTemplates, importFromCatalog, getSelectedTemplate, EXTERNAL_LABEL, loadExcelJS,
   };
 })();

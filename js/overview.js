@@ -3,9 +3,15 @@
 const Overview = (() => {
 
   // Reichert Knoten mit ist (Anzahl Bilder) und done (ist >= pflicht) an.
+  // Ist = übernommene Vor-Anzahl (priorCount) + lokal aufgenommene Bilder.
   async function enrich(nodes) {
-    const counts = await Promise.all(nodes.map((n) => DB.countPhotos(n.key)));
-    return nodes.map((n, i) => ({ ...n, ist: counts[i], done: counts[i] >= n.pflicht }));
+    const job = App.getCurrentJob();
+    const counts = await Promise.all(nodes.map((n) => DB.countPhotos(job.id, n.key)));
+    return nodes.map((n, i) => {
+      const prior = (job.priorCounts && job.priorCounts[n.key]) || 0;
+      const ist = prior + counts[i];
+      return { ...n, ist, done: ist >= n.pflicht };
+    });
   }
 
   // Baut HTML für die Übersicht: nach Ober/Unter gruppiert, offen zuerst markiert.

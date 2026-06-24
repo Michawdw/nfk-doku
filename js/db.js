@@ -1,40 +1,60 @@
-/* db.js – IndexedDB-Wrapper. Hält Projektkopf, Bilddoku-Struktur, eigene Namen,
-   Bilder (append-only) und Bautagebuch-Tageseinträge persistent. */
+/* db.js – IndexedDB-Wrapper (Schema v3).
+   Alles ist pro Auftrag (jobId) getrennt:
+   - jobs:   ein Datensatz je Auftrag (Kopf, Struktur, eigene Namen, gewählte Vorlage,
+             priorCounts = übernommene Ist-Anzahl je Position).
+   - photos: Bilder (append-only) mit jobId; Index byJobNode = [jobId, nodeKey].
+   - diary2: Bautagebuch-Tage, keyPath [jobId, datum].
+   - meta:   kleine Schlüssel/Werte (z. B. currentJobId, Migrationsflag).
+   Beim Upgrade von v2 werden vorhandene Einzel-Auftragsdaten in einen Default-Auftrag
+   migriert (nichts geht verloren). */
 const DB = (() => {
   const NAME = 'nfk-doku';
-  const VERSION = 2;
+  const VERSION = 3;
   let _db = null;
+  let _ready = null;
 
-  function open() {
-    if (_db) return Promise.resolve(_db);
+  function rawOpen() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(NAME, VERSION);
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
-        // Einfache Key-Value-Stores für Einzelobjekte.
-        if (!db.objectStoreNames.contains('project')) db.createObjectStore('project');
-        if (!db.objectStoreNames.contains('structure')) db.createObjectStore('structure');
-        if (!db.objectStoreNames.contains('customNames')) {
-          db.createObjectStore('customNames', { keyPath: 'key' });
-        }
+        const tx = e.target.transaction;
+
         if (!db.objectStoreNames.contains('photos')) {
           const ps = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
           ps.createIndex('byNode', 'nodeKey', { unique: false });
         }
-        if (!db.objectStoreNames.contains('diary')) {
-          db.createObjectStore('diary', { keyPath: 'datum' });
-        }
+        const ps = tx.objectStore('photos');
+        if (!ps.indexNames.contains('byJob')) ps.createIndex('byJob', 'jobId', { unique: false });
+        if (!ps.indexNames.contains('byJobNode')) ps.createIndex('byJobNode', ['jobId', 'nodeKey'], { unique: false });
+
+        if (!db.objectStoreNames.contains('jobs')) db.createObjectStore('jobs', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('diary2')) db.createObjectStore('diary2', { keyPath: ['jobId', 'datum'] });
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+        // Alt-Stores (project/structure/customNames/diary) werden NICHT gelöscht –
+        // sie werden nach dem Öffnen für die Datenmigration ausgelesen.
       };
-      req.onsuccess = () => { _db = req.result; resolve(_db); };
+      req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
   }
 
-  function tx(store, mode) {
-    return open().then((db) => db.transaction(store, mode).objectStore(store));
+  function open() {
+    if (_ready) return _ready;
+    _ready = rawOpen().then(async (db) => {
+      _db = db;
+      await migrateIfNeeded();
+      return _db;
+    });
+    return _ready;
   }
 
+  function store(name, mode) {
+    // Sobald die Verbindung steht, direkt nutzen – wichtig, damit die Migration
+    // (läuft INNERHALB der open()-Promise) sich nicht selbst blockiert.
+    if (_db) return Promise.resolve(_db.transaction(name, mode).objectStore(name));
+    return open().then((db) => db.transaction(name, mode).objectStore(name));
+  }
   function reqP(request) {
     return new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
@@ -42,82 +62,156 @@ const DB = (() => {
     });
   }
 
-  // ---- Projektkopf (key 'current') ----
-  async function getProject() {
-    const s = await tx('project', 'readonly');
-    return reqP(s.get('current'));
+  // ---- Meta ----
+  async function getMeta(key) { return reqP((await store('meta', 'readonly')).get(key)); }
+  async function setMeta(key, value) { return reqP((await store('meta', 'readwrite')).put(value, key)); }
+
+  // ---- Migration v2 -> v3 (einmalig) ----
+  function legacyExists(name) { return _db.objectStoreNames.contains(name); }
+  async function legacyGet(name, key) {
+    if (!legacyExists(name)) return undefined;
+    return reqP(_db.transaction(name, 'readonly').objectStore(name).get(key));
   }
-  async function saveProject(obj) {
-    const s = await tx('project', 'readwrite');
-    return reqP(s.put(obj, 'current'));
+  async function legacyGetAll(name) {
+    if (!legacyExists(name)) return [];
+    return reqP(_db.transaction(name, 'readonly').objectStore(name).getAll());
   }
 
-  // ---- Importierte Struktur (key 'current'): Array von Knoten ----
-  async function getStructure() {
-    const s = await tx('structure', 'readonly');
-    return (await reqP(s.get('current'))) || [];
-  }
-  async function saveStructure(arr) {
-    const s = await tx('structure', 'readwrite');
-    return reqP(s.put(arr, 'current'));
+  async function migrateIfNeeded() {
+    try {
+      if (await getMeta('migratedV3')) return;
+
+      const oldProject = await legacyGet('project', 'current');
+      const oldStructure = await legacyGet('structure', 'current');
+      const oldCustom = await legacyGetAll('customNames');
+      const oldSelected = await legacyGet('meta', 'selectedTemplate'); // war früher in meta
+      const allPhotos = await reqP((await store('photos', 'readonly')).getAll());
+      const oldPhotos = allPhotos.filter((p) => !p.jobId);
+
+      const hasOldData = !!oldProject || (oldStructure && oldStructure.length) ||
+        (oldCustom && oldCustom.length) || oldPhotos.length > 0;
+
+      if (hasOldData) {
+        const id = 'job_' + Date.now();
+        const h = oldProject || {};
+        const job = {
+          id,
+          name: (h.filiale || 'Auftrag 1'),
+          header: {
+            filiale: h.filiale || '', ort: h.ort || '', datum: h.datum || '',
+            beauftragung: h.beauftragung || 'NFK Vollverkabelung',
+            techniker: h.techniker || [],
+          },
+          structure: oldStructure || [],
+          customNames: oldCustom || [],
+          selectedTemplate: oldSelected || null,
+          priorCounts: {},
+          createdAt: Date.now(), updatedAt: Date.now(),
+        };
+        await reqP((await store('jobs', 'readwrite')).put(job));
+
+        // Fotos dem Default-Auftrag zuordnen.
+        if (oldPhotos.length) {
+          const ps = await store('photos', 'readwrite');
+          for (const p of oldPhotos) { p.jobId = id; await reqP(ps.put(p)); }
+        }
+        // Alte Bautagebuch-Tage übernehmen.
+        const oldDiary = await legacyGetAll('diary');
+        if (oldDiary.length) {
+          const ds = await store('diary2', 'readwrite');
+          for (const d of oldDiary) { d.jobId = id; await reqP(ds.put(d)); }
+        }
+        await setMeta('currentJobId', id);
+      }
+      await setMeta('migratedV3', true);
+    } catch (e) {
+      console.error('Migration fehlgeschlagen (Daten bleiben erhalten):', e);
+    }
   }
 
-  // ---- Eigene Namen (bleiben bei Re-Import erhalten) ----
-  async function getCustomNames() {
-    const s = await tx('customNames', 'readonly');
-    return reqP(s.getAll());
+  // ---- Aufträge ----
+  async function listJobs() {
+    const all = await reqP((await store('jobs', 'readonly')).getAll());
+    return all.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
-  async function addCustomName(node) {
-    const s = await tx('customNames', 'readwrite');
-    return reqP(s.put(node));
+  async function getJob(id) { return reqP((await store('jobs', 'readonly')).get(id)); }
+  async function saveJob(job) {
+    job.updatedAt = Date.now();
+    await reqP((await store('jobs', 'readwrite')).put(job));
+    return job;
   }
+  function newJob(name, headerDefaults) {
+    const now = Date.now();
+    return {
+      id: 'job_' + now + '_' + Math.random().toString(36).slice(2, 7),
+      name: name || 'Neuer Auftrag',
+      header: Object.assign(
+        { filiale: '', ort: '', datum: new Date().toISOString().slice(0, 10), beauftragung: 'NFK Vollverkabelung', techniker: [] },
+        headerDefaults || {}
+      ),
+      structure: [], customNames: [], selectedTemplate: null, priorCounts: {},
+      createdAt: now, updatedAt: now,
+    };
+  }
+  async function createJob(name, headerDefaults) {
+    const job = newJob(name, headerDefaults);
+    await saveJob(job);
+    return job;
+  }
+  async function deleteJob(id) {
+    await reqP((await store('jobs', 'readwrite')).delete(id));
+    // zugehörige Fotos löschen
+    const ps = await store('photos', 'readwrite');
+    await new Promise((resolve, reject) => {
+      const cur = ps.index('byJob').openCursor(IDBKeyRange.only(id));
+      cur.onsuccess = () => { const c = cur.result; if (c) { c.delete(); c.continue(); } else resolve(); };
+      cur.onerror = () => reject(cur.error);
+    });
+    // zugehörige Bautagebuch-Tage löschen
+    const ds = await store('diary2', 'readwrite');
+    await new Promise((resolve, reject) => {
+      const range = IDBKeyRange.bound([id, ''], [id, '￿']);
+      const cur = ds.openCursor(range);
+      cur.onsuccess = () => { const c = cur.result; if (c) { c.delete(); c.continue(); } else resolve(); };
+      cur.onerror = () => reject(cur.error);
+    });
+  }
+  async function getCurrentJobId() { return getMeta('currentJobId'); }
+  async function setCurrentJobId(id) { return setMeta('currentJobId', id); }
 
-  // ---- Bilder (append-only) ----
-  async function countPhotos(nodeKey) {
-    const s = await tx('photos', 'readonly');
-    return reqP(s.index('byNode').count(IDBKeyRange.only(nodeKey)));
+  // ---- Bilder (append-only, pro Auftrag) ----
+  async function countPhotos(jobId, nodeKey) {
+    const s = await store('photos', 'readonly');
+    return reqP(s.index('byJobNode').count(IDBKeyRange.only([jobId, nodeKey])));
   }
-  async function getPhotos(nodeKey) {
-    const s = await tx('photos', 'readonly');
-    const all = await reqP(s.index('byNode').getAll(IDBKeyRange.only(nodeKey)));
+  async function getPhotos(jobId, nodeKey) {
+    const s = await store('photos', 'readonly');
+    const all = await reqP(s.index('byJobNode').getAll(IDBKeyRange.only([jobId, nodeKey])));
     return all.sort((a, b) => a.seq - b.seq);
   }
-  async function getAllPhotos() {
-    const s = await tx('photos', 'readonly');
-    return reqP(s.getAll());
+  async function getAllPhotos(jobId) {
+    const s = await store('photos', 'readonly');
+    return reqP(s.index('byJob').getAll(IDBKeyRange.only(jobId)));
   }
   async function addPhoto(rec) {
-    // rec: { nodeKey, seq, blob, createdAt }. Niemals update/delete.
-    const s = await tx('photos', 'readwrite');
-    return reqP(s.add(rec));
+    // rec: { jobId, nodeKey, seq, blob, createdAt }. Niemals update/delete.
+    return reqP((await store('photos', 'readwrite')).add(rec));
   }
 
-  // ---- Meta (kleine Einstellungen, z. B. gewählte Vorlage) ----
-  async function getMeta(key) {
-    const s = await tx('meta', 'readonly');
-    return reqP(s.get(key));
+  // ---- Bautagebuch-Tage (pro Auftrag) ----
+  async function getDiary(jobId, datum) {
+    return reqP((await store('diary2', 'readonly')).get([jobId, datum]));
   }
-  async function setMeta(key, value) {
-    const s = await tx('meta', 'readwrite');
-    return reqP(s.put(value, key));
-  }
-
-  // ---- Bautagebuch-Tage ----
-  async function getDiary(datum) {
-    const s = await tx('diary', 'readonly');
-    return reqP(s.get(datum));
-  }
-  async function saveDiary(obj) {
-    const s = await tx('diary', 'readwrite');
-    return reqP(s.put(obj));
+  async function saveDiary(jobId, obj) {
+    obj.jobId = jobId;
+    return reqP((await store('diary2', 'readwrite')).put(obj));
   }
 
   return {
-    getProject, saveProject,
-    getStructure, saveStructure,
-    getCustomNames, addCustomName,
-    countPhotos, getPhotos, getAllPhotos, addPhoto,
     getMeta, setMeta,
+    listJobs, getJob, saveJob, createJob, deleteJob, newJob,
+    getCurrentJobId, setCurrentJobId,
+    countPhotos, getPhotos, getAllPhotos, addPhoto,
     getDiary, saveDiary,
   };
 })();
