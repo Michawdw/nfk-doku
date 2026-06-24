@@ -50,6 +50,10 @@ const Structure = (() => {
 
     const nodes = [];
     let headerSeen = false;
+    // „Fill-down": leere Ober-/Unterordner werden von der Zeile darüber fortgeführt
+    // (wie zusammengefasste Excel-Zellen). Ein neuer Oberordner setzt den Unterordner zurück.
+    let curOber = '';
+    let curUnter = '';
     ws.eachRow({ includeEmpty: false }, (row) => {
       const ober = cellText(row.getCell(1)).trim();
       const unter = cellText(row.getCell(2)).trim();
@@ -66,16 +70,22 @@ const Structure = (() => {
         headerSeen = true; // falls keine erkennbare Kopfzeile: trotzdem ab jetzt Daten
       }
 
-      if (!ober && !bildname) return; // Leerzeile
-      if (!bildname) return;          // ohne Bildnamen kein Knoten
+      // Fortführen/Aktualisieren der aktuellen Ordner.
+      if (ober) { curOber = ober; curUnter = ''; } // neuer Oberordner -> Unterordner neu
+      if (unter) { curUnter = unter; }
+
+      if (!bildname) return; // reine Gruppenzeile / Leerzeile: nur Ordner merken
+
+      const effOber = curOber || 'Allgemein';
+      const effUnter = curUnter || null;
 
       let pflicht = parseInt(pflichtRaw, 10);
       if (!Number.isFinite(pflicht) || pflicht < 0) pflicht = 1;
 
       nodes.push({
-        key: makeKey(ober, unter, bildname),
-        ober: ober || 'Allgemein',
-        unter: unter || null,
+        key: makeKey(effOber, effUnter, bildname),
+        ober: effOber,
+        unter: effUnter,
         bildname,
         pflicht,
         source: 'template',
