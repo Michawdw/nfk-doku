@@ -564,6 +564,7 @@ const App = (() => {
     };
     $('#handoverExportBtn').onclick = handoverExport;
     $('#handoverImport').addEventListener('change', handoverImport);
+    $('#mergeImport').addEventListener('change', mergeContribution);
     $('#diarySaveBtn').onclick = saveDiary;
     $('#diaryExportBtn').onclick = exportDiary;
     $('#modalOverlay').addEventListener('click', (e) => {
@@ -613,6 +614,24 @@ const App = (() => {
     } catch (e) {
       console.error(e);
       toast('Übergabe-Export fehlgeschlagen: ' + (e.message || e));
+    }
+  }
+
+  async function mergeContribution(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    toast('Führe Bilder zusammen…');
+    try {
+      const r = await Merge.importContributionZip(file);
+      await renderTree();
+      let msg = `${r.added} Bild(er) übernommen`;
+      if (r.skipped) msg += `, ${r.skipped} bereits vorhanden`;
+      if (r.addedNodes && r.addedNodes.length) msg += `, ${r.addedNodes.length} neue Position(en)`;
+      toast(msg);
+    } catch (err) {
+      console.error(err);
+      toast('Zusammenführen fehlgeschlagen: ' + (err.message || err));
     }
   }
 

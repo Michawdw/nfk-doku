@@ -42,7 +42,22 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
   - Pro Name Foto aufnehmen **oder** aus Galerie laden; automatische Komprimierung (lange Kante ≤ 2560 px, JPEG ~85 %, EXIF-Ausrichtung korrigiert).
   - Fortlaufende Benennung `<Bildname>_NN.jpg`; erledigte Positionen (Ist ≥ Pflicht) werden ausgegraut, weitere Bilder bleiben erlaubt (append-only, kein Löschen/Überschreiben).
   - Übersichts-Button: offene vs. erledigte Positionen.
-  - **ZIP-Export** mit Template-Ordnerstruktur + `uebersicht.csv`; Weitergabe über den Android-Share-Dialog (Fallback: Download).
+  - **ZIP-Export** mit Template-Ordnerstruktur + `uebersicht.csv` + `manifest.json`
+    (maschinenlesbare Bild→Position-Zuordnung); Weitergabe über den Android-Share-Dialog
+    (Fallback: Download).
+- **Mehrere Techniker auf einer Baustelle (Beiträge zusammenführen)**
+  - Ablauf: Jeder Techniker fotografiert **offline** auf seinem Gerät (gleiche Vorlage),
+    exportiert am Tagesende seine **Bilder-ZIP** und schickt sie dem Vorarbeiter
+    (z. B. WhatsApp **als Datei/Dokument**, nicht „als Foto" – sonst komprimiert WhatsApp).
+  - Der Vorarbeiter tippt **„🔗 Beiträge zusammenführen"** und wählt die erhaltene ZIP →
+    die Bilder werden seinem Auftrag **pro Position angehängt und fortlaufend
+    weiternummeriert** (`_03`, `_04`, …), fehlende Positionen werden ergänzt, die Übersicht
+    aktualisiert sich. **Duplikatschutz**: dieselbe ZIP mehrfach einlesen fügt nichts doppelt
+    hinzu (eindeutige Bild-ID). Vorhandene Bilder werden nie umbenannt/überschrieben.
+  - Am Ende exportiert der Vorarbeiter die **vollständige Bilder-ZIP** fürs Büro.
+  - Hinweis: WhatsApp-Dateilimit ~100 MB; bei sehr vielen Bildern in mehreren Sendungen
+    oder über Google Drive/E-Mail teilen. Bereichsaufteilung der Techniker ist sinnvoll,
+    aber dank Weiternummerierung nicht zwingend.
 - **Bautagebuch**
   - Tagesweise Erfassung von Arbeitszeiten (bis 5 Techniker), Tätigkeiten, Behinderungen, besonderen Vorkommnissen.
   - Export als `.xlsx` – erzeugt durch **Befüllen der Originalvorlage** (`assets/vorlage_bautagebuch.xlsx`): Logo, Rahmen, Schriften, Layout und Blattschutz bleiben garantiert 1:1 erhalten.
@@ -75,6 +90,7 @@ js/overview.js                    Status/Übersicht
 js/export-zip.js                  ZIP-Export + Index-CSV + Share
 js/bautagebuch.js                 Vorlagen-Befüllung + .xlsx-Export
 js/handover.js                    Übergabe-/Übersicht-Excel: Export + Import
+js/merge.js                       Beiträge mehrerer Geräte zusammenführen (ZIP-Merge)
 lib/jszip.min.js, lib/exceljs.min.js
 sw.js, manifest.webmanifest       PWA / Offline
 assets/vorlage_bautagebuch.xlsx   Befüll-Vorlage (Original)

@@ -107,12 +107,15 @@ const Photos = (() => {
     const prior = (job.priorCounts && job.priorCounts[node.key]) || 0;
     const local = await DB.countPhotos(job.id, node.key);
     const seq = prior + local + 1;
+    const deviceId = await DB.getDeviceId();
     await DB.addPhoto({
       jobId: job.id,
       nodeKey: node.key,
       seq,
       blob,
       createdAt: Date.now(),
+      // Eindeutige, geräteübergreifend stabile Bild-ID für den Merge-Duplikatschutz.
+      srcId: deviceId + ':' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     });
     return seq;
   }

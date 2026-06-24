@@ -31,6 +31,13 @@ const ExportZip = (() => {
     const header = ['Oberordner', 'Unterordner', 'Bildname', 'Pflichtanzahl', 'Ist-Anzahl', 'Status'];
     const lines = [header.map(csvCell).join(';')];
 
+    // manifest.json: maschinenlesbare Zuordnung Bild->Position (für exaktes Zusammenführen).
+    const manifest = {
+      app: 'nfk-doku', type: 'bilddoku', version: 1,
+      job: { name: job && job.name, header: project },
+      photos: [],
+    };
+
     let totalPhotos = 0;
     for (const n of enriched) {
       lines.push([
@@ -45,12 +52,20 @@ const ExportZip = (() => {
       const folder = parts.join('/');
       for (const p of photos) {
         const fname = `${safePart(n.bildname)}_${String(p.seq).padStart(2, '0')}.jpg`;
-        zip.file(`${folder}/${fname}`, p.blob);
+        const path = `${folder}/${fname}`;
+        zip.file(path, p.blob);
+        manifest.photos.push({
+          srcId: p.srcId || null,
+          nodeKey: n.key,
+          ober: n.ober, unter: n.unter || null, bildname: n.bildname, pflicht: n.pflicht,
+          seq: p.seq, createdAt: p.createdAt || null, path,
+        });
         totalPhotos++;
       }
     }
 
     zip.file('uebersicht.csv', '﻿' + lines.join('\r\n'));
+    zip.file('manifest.json', JSON.stringify(manifest, null, 2));
 
     if (totalPhotos === 0) {
       App.toast('Noch keine Bilder aufgenommen.');

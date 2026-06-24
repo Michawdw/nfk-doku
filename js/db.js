@@ -66,6 +66,16 @@ const DB = (() => {
   async function getMeta(key) { return reqP((await store('meta', 'readonly')).get(key)); }
   async function setMeta(key, value) { return reqP((await store('meta', 'readwrite')).put(value, key)); }
 
+  // Stabile, einmalig erzeugte Geräte-ID (für eindeutige Bild-IDs srcId).
+  async function getDeviceId() {
+    let id = await getMeta('deviceId');
+    if (!id) {
+      id = 'dev_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      await setMeta('deviceId', id);
+    }
+    return id;
+  }
+
   // ---- Migration v2 -> v3 (einmalig) ----
   function legacyExists(name) { return _db.objectStoreNames.contains(name); }
   async function legacyGet(name, key) {
@@ -194,8 +204,13 @@ const DB = (() => {
     return reqP(s.index('byJob').getAll(IDBKeyRange.only(jobId)));
   }
   async function addPhoto(rec) {
-    // rec: { jobId, nodeKey, seq, blob, createdAt }. Niemals update/delete.
+    // rec: { jobId, nodeKey, seq, blob, createdAt, srcId }. Niemals update/delete.
     return reqP((await store('photos', 'readwrite')).add(rec));
+  }
+  // Menge der bereits vorhandenen Bild-IDs eines Auftrags (für Duplikatschutz beim Merge).
+  async function getPhotoSrcIds(jobId) {
+    const all = await getAllPhotos(jobId);
+    return new Set(all.map((p) => p.srcId).filter(Boolean));
   }
 
   // ---- Bautagebuch-Tage (pro Auftrag) ----
@@ -208,10 +223,10 @@ const DB = (() => {
   }
 
   return {
-    getMeta, setMeta,
+    getMeta, setMeta, getDeviceId,
     listJobs, getJob, saveJob, createJob, deleteJob, newJob,
     getCurrentJobId, setCurrentJobId,
-    countPhotos, getPhotos, getAllPhotos, addPhoto,
+    countPhotos, getPhotos, getAllPhotos, addPhoto, getPhotoSrcIds,
     getDiary, saveDiary,
   };
 })();
