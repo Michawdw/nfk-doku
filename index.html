@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1f4e78" />
+  <title>Auftragsdoku FlexPos NFK</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <button id="backBtn" class="icon-btn" hidden aria-label="Zurück">‹</button>
+    <h1 id="topTitle">NFK Doku</h1>
+    <span id="netDot" class="net-dot" title="Offline-Status"></span>
+  </header>
+
+  <main id="main">
+
+    <!-- ===================== START / PROJEKTKOPF ===================== -->
+    <section id="view-start" class="view active">
+      <h2>Projekt-Stammdaten</h2>
+      <p class="hint">Einmalig erfassen – wird für Bilddoku und Bautagebuch verwendet.</p>
+      <form id="projectForm" class="form">
+        <label>Bauvorhaben / Filiale
+          <input name="filiale" placeholder="7265 Memmingen" autocomplete="off" required />
+        </label>
+        <label>Ort
+          <input name="ort" placeholder="Memmingen" autocomplete="off" required />
+        </label>
+        <label>Datum
+          <input name="datum" type="date" required />
+        </label>
+        <label>Beauftragung
+          <input name="beauftragung" value="NFK Vollverkabelung" autocomplete="off" />
+        </label>
+        <fieldset class="techs">
+          <legend>Techniker</legend>
+          <div id="techList"></div>
+          <button type="button" id="addTechBtn" class="btn ghost">+ Techniker</button>
+        </fieldset>
+        <button type="submit" class="btn primary">Speichern</button>
+        <span id="projectSaved" class="saved" hidden>✓ gespeichert</span>
+      </form>
+
+      <h2>Funktion wählen</h2>
+      <div class="bigchoice">
+        <button class="bigbtn" data-go="view-bilddoku">
+          <span class="bigbtn-emoji">📷</span>
+          <span class="bigbtn-title">Bilddokumentation</span>
+          <span class="bigbtn-sub">Fotos pro Bereich/Name, ZIP-Export</span>
+        </button>
+        <button class="bigbtn" data-go="view-bautagebuch">
+          <span class="bigbtn-emoji">📋</span>
+          <span class="bigbtn-title">Bautagebuch</span>
+          <span class="bigbtn-sub">Täglich als Excel exportieren</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ===================== BILDDOKUMENTATION ===================== -->
+    <section id="view-bilddoku" class="view">
+      <div class="toolrow">
+        <label class="btn ghost filelabel">
+          📥 Template importieren
+          <input id="importTemplate" type="file" accept=".xlsx" hidden />
+        </label>
+        <button id="overviewBtn" class="btn ghost">📊 Übersicht</button>
+        <button id="exportZipBtn" class="btn primary">📦 ZIP-Export</button>
+      </div>
+      <p id="templateInfo" class="hint"></p>
+
+      <div id="structureTree" class="tree"></div>
+
+      <button id="addCustomBtn" class="btn ghost wide">+ Eigenen Bereich / Namen anlegen</button>
+    </section>
+
+    <!-- ===================== BAUTAGEBUCH ===================== -->
+    <section id="view-bautagebuch" class="view">
+      <form id="diaryForm" class="form">
+        <div class="grid2">
+          <label>Datum
+            <input name="datum" type="date" required />
+          </label>
+          <label>Anz. Techniker
+            <input name="anzTechniker" type="number" min="0" step="1" inputmode="numeric" />
+          </label>
+        </div>
+
+        <h3>Arbeitszeiten (max. 5)</h3>
+        <div id="diaryRows" class="diary-rows"></div>
+
+        <label>Beschreibung der Tätigkeiten
+          <textarea name="taetigkeiten" rows="6"></textarea>
+        </label>
+        <label>Behinderungen
+          <textarea name="behinderungen" rows="3"></textarea>
+        </label>
+        <label>Besondere Vorkommnisse
+          <textarea name="vorkommnisse" rows="3"></textarea>
+        </label>
+        <label>Fußzeile „Ort Datum"
+          <input name="ortDatum" placeholder="Memmingen 11.09.2025" autocomplete="off" />
+        </label>
+
+        <div class="toolrow">
+          <button type="button" id="diarySaveBtn" class="btn ghost">💾 Tag speichern</button>
+          <button type="button" id="diaryExportBtn" class="btn primary">📄 Excel exportieren</button>
+        </div>
+        <span id="diarySaved" class="saved" hidden>✓ gespeichert</span>
+      </form>
+    </section>
+  </main>
+
+  <!-- ===================== MODAL (generisch) ===================== -->
+  <div id="modalOverlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 id="modalTitle"></h3>
+      <div id="modalBody"></div>
+      <div class="modal-actions">
+        <button id="modalCancel" class="btn ghost">Abbrechen</button>
+        <button id="modalOk" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Libs (lokal vendored, offline-fähig) -->
+  <script src="lib/jszip.min.js"></script>
+  <script src="lib/exceljs.min.js"></script>
+  <!-- App-Module -->
+  <script src="js/db.js"></script>
+  <script src="js/template.js"></script>
+  <script src="js/photos.js"></script>
+  <script src="js/overview.js"></script>
+  <script src="js/export-zip.js"></script>
+  <script src="js/bautagebuch.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
