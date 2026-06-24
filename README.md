@@ -39,7 +39,7 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
     (Knopf „Eigene Excel…", erstes Blatt).
   - Eigene Bereiche/Namen im Feld anlegen – bleiben dauerhaft gespeichert und
     bleiben beim Wechsel der Vorlage erhalten.
-  - Pro Name Foto aufnehmen **oder** aus Galerie laden; automatische Komprimierung (lange Kante ≤ 2560 px, JPEG ~85 %, EXIF-Ausrichtung korrigiert).
+  - Pro Name Foto aufnehmen **oder** aus Galerie laden; automatische Komprimierung (lange Kante ≤ 1920 px, JPEG ~80 %, EXIF-Ausrichtung korrigiert).
   - Fortlaufende Benennung `<Bildname>_NN.jpg`; erledigte Positionen (Ist ≥ Pflicht) werden ausgegraut, weitere Bilder bleiben erlaubt (append-only, kein Löschen/Überschreiben).
   - **Ein-/ausklappbarer Baum**: standardmäßig sind nur die Oberordner sichtbar (je mit
     Status-Badge „erledigt/gesamt"). Antippen öffnet einen Oberordner (zeigt Unterordner/

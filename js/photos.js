@@ -1,8 +1,8 @@
-/* photos.js – Foto verarbeiten: EXIF-Orientation auswerten, auf max. 2560 px
-   lange Kante skalieren, als JPEG ~85 % speichern. Append-only Nummerierung. */
+/* photos.js – Foto verarbeiten: EXIF-Orientation auswerten, auf max. 1920 px
+   lange Kante skalieren, als JPEG ~80 % speichern. Append-only Nummerierung. */
 const Photos = (() => {
-  const MAX_EDGE = 2560;
-  const QUALITY = 0.85;
+  const MAX_EDGE = 1920;
+  const QUALITY = 0.80;
 
   // Liest EXIF-Orientation (1..8) aus einem JPEG-ArrayBuffer; 1 wenn nicht gefunden.
   function readOrientation(buffer) {
