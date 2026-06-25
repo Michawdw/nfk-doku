@@ -109,6 +109,21 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .filelabel { cursor: pointer; }
 .toolrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 12px; }
 .toolrow .btn { flex: 1 1 auto; }
+
+/* Backup-Erinnerung */
+.backup-banner {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  padding: 12px 14px; margin: 12px 0; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--card);
+}
+.backup-banner .bk-msg { flex: 1 1 180px; font-weight: 700; font-size: 15px; line-height: 1.35; }
+.backup-banner .bk-save { flex: 0 0 auto; }
+.backup-banner.warn { background: #fdecea; border-color: #f3c4be; }
+.backup-banner.warn .bk-msg { color: var(--warn); }
+.backup-banner.ok { background: #e7f5ec; border-color: #bfe3cd; }
+.backup-banner.ok .bk-msg { color: var(--ok); }
+.backup-banner.info { background: #eaf2fb; border-color: #c4dcf3; }
+.backup-banner.info .bk-msg { color: var(--brand); }
 .btn.icon-only { flex: 0 0 auto; min-width: var(--tap); font-size: 20px; padding: 0; }
 
 /* Vorlagen-Auswahl */

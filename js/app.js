@@ -24,6 +24,7 @@ const App = (() => {
     $('#topTitle').textContent = viewTitles[viewId] || 'NFK Doku';
     $('#backBtn').hidden = (viewId === 'view-start');
     window.scrollTo(0, 0);
+    if (viewId === 'view-start') renderBackupReminder('#backupReminderStart');
     if (viewId === 'view-bilddoku') enterBilddoku();
     if (viewId === 'view-bautagebuch') initDiaryView();
   }
@@ -245,6 +246,63 @@ const App = (() => {
     f.datum.value = h.datum || new Date().toISOString().slice(0, 10);
     f.beauftragung.value = h.beauftragung || 'NFK Vollverkabelung';
     (h.techniker && h.techniker.length ? h.techniker : ['']).forEach((t) => list.appendChild(techRow(t)));
+    await renderBackupReminder('#backupReminderStart');
+  }
+
+  // --------------------------------------------------------- Backup-Erinnerung
+  // Zeigt pro Auftrag an, ob ungesicherte Bilder vorliegen, und bietet den vollen
+  // ZIP-Export als Sicherung an. „Gesichert" = es wurde eine ZIP erzeugt und geteilt;
+  // der Android-Teilen-Dialog meldet keinen Erfolg zurück, daher gilt das Auslösen
+  // als Sicherung. Echte Sicherheit entsteht erst, wenn die ZIP vom Handy weg ist.
+  async function renderBackupReminder(sel) {
+    const el = $(sel);
+    if (!el) return;
+    const job = currentJob;
+    if (!job) { el.hidden = true; return; }
+
+    const photos = await DB.getAllPhotos(job.id);
+    if (!photos.length) { el.hidden = true; return; } // nichts zu verlieren
+
+    const last = job.lastBackupAt || 0;
+    const unsaved = photos.filter((p) => (p.createdAt || 0) > last).length;
+    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+    const ago = days === null ? '' : days <= 0 ? 'heute' : days === 1 ? 'gestern' : `vor ${days} Tagen`;
+
+    let cls, msg;
+    if (unsaved > 0) {
+      cls = (!last || days >= 1) ? 'warn' : 'info';
+      msg = !last
+        ? `⚠ Noch nie gesichert – ${photos.length} Bild${photos.length === 1 ? '' : 'er'} nur auf diesem Handy.`
+        : `⚠ ${unsaved} neue${unsaved === 1 ? 's Bild' : ' Bilder'} seit der letzten Sicherung (${ago}).`;
+    } else {
+      cls = 'ok';
+      msg = `✓ Alle Bilder gesichert (zuletzt ${ago}).`;
+    }
+
+    el.className = 'backup-banner ' + cls;
+    el.hidden = false;
+    el.innerHTML = `<span class="bk-msg"></span>` +
+      `<button type="button" class="btn primary bk-save">💾 Jetzt sichern</button>`;
+    el.querySelector('.bk-msg').textContent = msg;
+    el.querySelector('.bk-save').onclick = doBackupNow;
+  }
+
+  // Erzeugt den vollen Bilddoku-ZIP (= komplette Sicherung) und merkt den Zeitpunkt.
+  async function doBackupNow() {
+    toast('Erzeuge Sicherung…');
+    try {
+      const res = await ExportZip.build();
+      if (res && res.totalPhotos) {
+        currentJob.lastBackupAt = Date.now();
+        await DB.saveJob(currentJob);
+        toast('Sicherung erstellt – bitte in Drive/Chat ablegen.');
+      }
+    } catch (e) {
+      console.error(e);
+      toast('Sicherung fehlgeschlagen: ' + (e.message || e));
+    }
+    await renderBackupReminder('#backupReminder');
+    await renderBackupReminder('#backupReminderStart');
   }
 
   async function saveProjectForm(e) {
@@ -282,6 +340,7 @@ const App = (() => {
   // beim allerersten Mal automatisch die Standard-Vorlage importieren, Dropdown füllen.
   async function enterBilddoku() {
     await renderTree(); // sofort zeigen, was schon da ist (auch offline ohne ExcelJS)
+    await renderBackupReminder('#backupReminder'); // unabhängig vom (langsamen) Katalog-Laden
     try {
       if (!catalogNames) catalogNames = await Structure.listTemplates();
     } catch (e) {
@@ -483,6 +542,7 @@ const App = (() => {
         await Photos.addToNode(currentNode, file);
       }
       await renderTree();
+      await renderBackupReminder('#backupReminder');
       toast('Gespeichert');
     } catch (err) {
       console.error(err);
@@ -717,10 +777,9 @@ const App = (() => {
     $('#tplRefreshBtn').onclick = refreshCatalog;
     $('#addCustomBtn').onclick = addCustomNameFlow;
     $('#overviewBtn').onclick = () => Overview.show();
-    $('#exportZipBtn').onclick = async () => {
-      toast('Erzeuge ZIP…');
-      try { await ExportZip.build(); } catch (e) { console.error(e); toast('ZIP-Fehler: ' + (e.message || e)); }
-    };
+    // ZIP-Export = vollständige Sicherung: über doBackupNow, damit der Zeitpunkt
+    // gemerkt und die Backup-Erinnerung aktualisiert wird.
+    $('#exportZipBtn').onclick = doBackupNow;
     $('#handoverExportBtn').onclick = handoverExport;
     $('#handoverImport').addEventListener('change', handoverImport);
     $('#mergeImport').addEventListener('change', mergeContribution);

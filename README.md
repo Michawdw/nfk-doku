@@ -18,6 +18,14 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
   regelmäßiger **Bild-ZIP-Export** (enthält die Fotos). Beim Deinstallieren der App oder
   Löschen der Browserdaten gehen lokale Daten verloren – daher vor solchen Aktionen ZIP
   exportieren.
+- **Backup-Erinnerung**: Auf der Startseite und in der Bilddoku zeigt ein Banner pro Auftrag,
+  ob es **ungesicherte Bilder** gibt (orange „⚠ N neue Bilder seit der letzten Sicherung")
+  bzw. dass alles gesichert ist (grün „✓ Alle Bilder gesichert"). Der Knopf **„💾 Jetzt
+  sichern"** löst denselben vollen ZIP-Export aus und merkt sich den Zeitpunkt; auch der
+  normale ZIP-Export zählt als Sicherung. Wichtig: Eine ZIP ist erst dann ein echtes Backup,
+  wenn sie **vom Handy weg** ist (z. B. über den Teilen-Dialog nach Google Drive oder an sich
+  selbst). Die neueste ZIP enthält immer **alle** Bilder des Auftrags (alte + neue) – eine alte
+  ZIP muss nie „ergänzt" werden, sie wird einfach durch die neueste ersetzt.
 - **Übergabe an anderes Team / Innendienst-Auswertung**: „Übergabe export (.xlsx)" erzeugt
   eine kleine Excel-Datei mit dem Zwischenstand (Position, Pflicht, Ist, Status) **ohne
   Bilder**. Der Innendienst kann sie direkt auswerten; ein anderes Team importiert sie per
