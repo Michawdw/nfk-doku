@@ -54,7 +54,15 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
     Positionen); Unterordner sind ebenso auf-/zuklappbar – für bessere Übersicht am Handy.
     Ist ein Ordner (inkl. seiner Unterordner) **komplett erledigt**, wird er verblasst und
     mit einem **grünen Haken ✓** markiert.
-  - Übersichts-Button: offene vs. erledigte Positionen.
+  - **„Nicht benötigt" markieren**: Nicht jede Baustelle braucht alle Vorlagen-Positionen.
+    Über den Schalter **∅** an jeder Position, jedem Unter- und jedem Oberordner lässt sich
+    Überflüssiges als **nicht benötigt** kennzeichnen (Schalter **↩** macht es rückgängig).
+    Markiertes verschwindet nicht, wird aber **ausgegraut/„nicht benötigt"** dargestellt und
+    zählt **nicht** mehr zu den Pflichtbildern – ein Ordner bekommt den grünen Haken bereits,
+    wenn alle *noch benötigten* Positionen erledigt sind. Ein Ordner-Schalter wirkt auf alle
+    enthaltenen Positionen (Kind-Schalter greifen erst wieder, wenn der Ordner zurückgesetzt
+    ist). Der Status erscheint auch in der Übersicht und in allen Exporten.
+  - Übersichts-Button: offene, erledigte und nicht benötigte Positionen.
   - **ZIP-Export** mit Template-Ordnerstruktur + `uebersicht.csv` + `manifest.json`
     (maschinenlesbare Bild→Position-Zuordnung); Weitergabe über den Android-Share-Dialog
     (Fallback: Download).

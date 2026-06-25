@@ -10,19 +10,22 @@ const Overview = (() => {
     return nodes.map((n, i) => {
       const prior = (job.priorCounts && job.priorCounts[n.key]) || 0;
       const ist = prior + counts[i];
-      return { ...n, ist, done: ist >= n.pflicht };
+      return { ...n, ist, done: ist >= n.pflicht, skipped: Structure.isSkipped(n, job) };
     });
   }
 
   // Baut HTML für die Übersicht: nach Ober/Unter gruppiert, offen zuerst markiert.
   function buildHtml(enriched) {
-    const offen = enriched.filter((n) => !n.done);
-    const erledigt = enriched.filter((n) => n.done);
+    // Geskippte („nicht benötigt") Positionen zählen nicht als offen/erledigt.
+    const offen = enriched.filter((n) => !n.skipped && !n.done);
+    const erledigt = enriched.filter((n) => !n.skipped && n.done);
+    const nichtBenoetigt = enriched.filter((n) => n.skipped);
 
     const grp = Structure.groupForDisplay(enriched);
     let html = `<div class="ov-summary">
         <span class="ov-pill open">${offen.length} offen</span>
         <span class="ov-pill done">${erledigt.length} erledigt</span>
+        ${nichtBenoetigt.length ? `<span class="ov-pill skip">${nichtBenoetigt.length} nicht benötigt</span>` : ''}
       </div>`;
 
     for (const [ober, unterMap] of grp) {
@@ -30,12 +33,13 @@ const Overview = (() => {
       for (const [uk, list] of unterMap) {
         if (uk) html += `<div class="ov-unter">${esc(uk)}</div>`;
         for (const n of list) {
-          const cls = n.done ? 'ov-item done' : 'ov-item open';
-          const mark = n.done ? '✓' : '○';
+          const cls = n.skipped ? 'ov-item skip' : (n.done ? 'ov-item done' : 'ov-item open');
+          const mark = n.skipped ? '–' : (n.done ? '✓' : '○');
+          const cnt = n.skipped ? 'nicht benötigt' : `${n.ist}/${n.pflicht}`;
           html += `<div class="${cls}">
               <span class="ov-mark">${mark}</span>
               <span class="ov-name">${esc(n.bildname)}</span>
-              <span class="ov-cnt">${n.ist}/${n.pflicht}</span>
+              <span class="ov-cnt">${cnt}</span>
             </div>`;
         }
       }

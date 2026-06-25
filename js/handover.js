@@ -34,7 +34,7 @@ const Handover = (() => {
     return nodes.map((n, i) => {
       const prior = (job.priorCounts && job.priorCounts[n.key]) || 0;
       const ist = prior + counts[i];
-      return { n, ist, done: ist >= n.pflicht };
+      return { n, ist, done: ist >= n.pflicht, skipped: Structure.isSkipped(n, job) };
     });
   }
 
@@ -74,7 +74,8 @@ const Handover = (() => {
     s2.addRow(['Oberordner', 'Unterordner', 'Bildname', 'Pflichtanzahl', 'Ist-Anzahl', 'Status']);
     s2.getRow(1).font = { bold: true };
     for (const e of enriched) {
-      s2.addRow([e.n.ober, e.n.unter || '', e.n.bildname, e.n.pflicht, e.ist, e.done ? 'erledigt' : 'offen']);
+      s2.addRow([e.n.ober, e.n.unter || '', e.n.bildname, e.n.pflicht, e.ist,
+        e.skipped ? 'nicht benötigt' : (e.done ? 'erledigt' : 'offen')]);
     }
     s2.autoFilter = 'A1:F1';
     s2.views = [{ state: 'frozen', ySplit: 1 }];
@@ -107,6 +108,7 @@ const Handover = (() => {
 
     const structure = [];
     const priorCounts = {};
+    const skippedNodes = [];
     let headerSeen = false;
     s2.eachRow({ includeEmpty: false }, (row) => {
       const ober = cellText(row.getCell(1)).trim();
@@ -114,6 +116,7 @@ const Handover = (() => {
       const bildname = cellText(row.getCell(3)).trim();
       const pflichtRaw = cellText(row.getCell(4)).trim();
       const istRaw = cellText(row.getCell(5)).trim();
+      const statusRaw = cellText(row.getCell(6)).trim().toLowerCase();
 
       if (!headerSeen) { // Kopfzeile überspringen
         headerSeen = true;
@@ -128,6 +131,9 @@ const Handover = (() => {
       const key = Structure.makeKey(ober || 'Allgemein', unter || null, bildname);
       structure.push({ key, ober: ober || 'Allgemein', unter: unter || null, bildname, pflicht, source: 'template' });
       priorCounts[key] = ist;
+      // „nicht benötigt"-Status rekonstruieren (pro Position; Ordner-Skips materialisieren
+      // sich als Summe ihrer Kind-Keys – gleiches Endergebnis).
+      if (statusRaw.includes('nicht benötigt') || statusRaw.includes('nicht benoetigt')) skippedNodes.push(key);
     });
 
     if (structure.length === 0) throw new Error('Übergabe-Datei enthält keine Positionen.');
@@ -147,6 +153,7 @@ const Handover = (() => {
     job.structure = structure;
     job.customNames = job.customNames || [];
     job.priorCounts = priorCounts;
+    job.skipped = { obers: [], unters: [], nodes: skippedNodes };
     job.selectedTemplate = kv.vorlage || job.selectedTemplate || null;
 
     await DB.saveJob(job);

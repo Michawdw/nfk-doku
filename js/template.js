@@ -23,6 +23,20 @@ const Structure = (() => {
     return [ober, unter || '', bildname].join(SEP);
   }
 
+  // Schlüssel eines Unterordners für die „nicht benötigt"-Markierung.
+  function unterKey(ober, unter) {
+    return ober + SEP + unter;
+  }
+
+  // Ist ein Knoten als „nicht benötigt" markiert? Hierarchisch: ein markierter
+  // Ober-/Unterordner kaskadiert automatisch auf alle enthaltenen Bilder.
+  function isSkipped(n, job) {
+    const s = (job && job.skipped) || {};
+    return (s.obers || []).includes(n.ober)
+      || (!!n.unter && (s.unters || []).includes(unterKey(n.ober, n.unter)))
+      || (s.nodes || []).includes(n.key);
+  }
+
   function cellText(cell) {
     if (cell == null) return '';
     const v = (cell && cell.value != null) ? cell.value : cell;
@@ -177,7 +191,7 @@ const Structure = (() => {
   }
 
   return {
-    SEP, makeKey, parseWorkbook, importFile, addCustomName, getMerged, groupForDisplay,
+    SEP, makeKey, unterKey, isSkipped, parseWorkbook, importFile, addCustomName, getMerged, groupForDisplay,
     listTemplates, importFromCatalog, getSelectedTemplate, EXTERNAL_LABEL, loadExcelJS,
   };
 })();

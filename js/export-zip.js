@@ -46,7 +46,7 @@ const ExportZip = (() => {
     for (const n of enriched) {
       lines.push([
         n.ober, n.unter || '', n.bildname, n.pflicht, n.ist,
-        n.done ? 'erledigt' : 'offen',
+        n.skipped ? 'nicht benötigt' : (n.done ? 'erledigt' : 'offen'),
       ].map(csvCell).join(';'));
 
       // --- Bilder in Ordnerstruktur ablegen ---
@@ -62,6 +62,7 @@ const ExportZip = (() => {
           srcId: p.srcId || null,
           nodeKey: n.key,
           ober: n.ober, unter: n.unter || null, bildname: n.bildname, pflicht: n.pflicht,
+          benoetigt: !n.skipped,
           seq: p.seq, createdAt: p.createdAt || null, path,
         });
         totalPhotos++;

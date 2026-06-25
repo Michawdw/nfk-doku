@@ -232,6 +232,21 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .thumb-wrap { position: relative; }
 .thumb-seq { position: absolute; bottom: 2px; right: 2px; background: rgba(0,0,0,.6); color: #fff; font-size: 10px; padding: 1px 4px; border-radius: 4px; }
 
+/* ---------- „nicht benötigt"-Markierung ---------- */
+.skip-btn {
+  flex: 0 0 auto; width: 40px; height: var(--tap);
+  border: 1px solid var(--line); background: #fff; color: var(--muted);
+  border-radius: 12px; font-size: 18px; line-height: 1;
+}
+.grp-stat.skip { background: #eceff2; color: var(--muted); }
+/* Geskippte Ordner/Positionen: gedämpft, Name durchgestrichen – klar anders als grünes „erledigt". */
+.tree-ober.skipped, .tree-unter.skipped { background: #f3f4f6; border-style: dashed; }
+.tree-ober.skipped .grp-name, .tree-unter.skipped .grp-name { color: var(--muted); text-decoration: line-through; font-weight: 700; }
+.name-row.skipped { background: #f3f4f6; border-style: dashed; color: var(--muted); }
+.name-row.skipped .name-label { color: var(--muted); text-decoration: line-through; }
+.name-row.skipped .name-count { color: var(--muted); font-style: italic; }
+.name-row.skipped .count-badge { background: #e4e7ea; color: var(--muted); }
+
 /* ---------- Bautagebuch-Archiv ---------- */
 .arch-head { margin: 4px 0 6px; }
 .diary-archive { display: grid; gap: 8px; margin-bottom: 16px; }
@@ -269,6 +284,7 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .ov-pill { padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; }
 .ov-pill.open { background: #fdecea; color: var(--warn); }
 .ov-pill.done { background: #e7f5ec; color: var(--ok); }
+.ov-pill.skip { background: #eceff2; color: var(--muted); }
 .ov-ober { font-weight: 800; color: var(--brand); margin: 12px 0 4px; border-bottom: 1px solid var(--line); }
 .ov-unter { font-weight: 700; color: var(--brand-light); margin: 6px 0 2px 6px; font-size: 14px; }
 .ov-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px dashed #eceff2; }
@@ -276,6 +292,9 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .ov-mark { width: 20px; text-align: center; font-weight: 700; }
 .ov-item.open .ov-mark { color: var(--warn); }
 .ov-item.done .ov-mark { color: var(--ok); }
+.ov-item.skip { color: var(--muted); }
+.ov-item.skip .ov-name { text-decoration: line-through; }
+.ov-item.skip .ov-cnt { font-style: italic; }
 .ov-name { flex: 1; word-break: break-word; }
 .ov-cnt { font-variant-numeric: tabular-nums; font-weight: 700; }
 

@@ -160,6 +160,7 @@ const DB = (() => {
         headerDefaults || {}
       ),
       structure: [], customNames: [], selectedTemplate: null, priorCounts: {},
+      skipped: { obers: [], unters: [], nodes: [] }, // „nicht benötigt"-Markierungen
       createdAt: now, updatedAt: now,
     };
   }

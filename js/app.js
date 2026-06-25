@@ -410,6 +410,22 @@ const App = (() => {
   const expandedUnters = new Set();
   function toggleSet(set, key) { if (set.has(key)) set.delete(key); else set.add(key); }
 
+  // „nicht benötigt"-Markierungen des aktuellen Auftrags. level ∈ {'obers','unters','nodes'}.
+  function skipSet(level) {
+    const j = currentJob;
+    return (j && j.skipped && j.skipped[level]) || [];
+  }
+  async function toggleSkip(level, key) {
+    const job = App.getCurrentJob();
+    if (!job.skipped) job.skipped = { obers: [], unters: [], nodes: [] };
+    if (!job.skipped[level]) job.skipped[level] = [];
+    const arr = job.skipped[level];
+    const i = arr.indexOf(key);
+    if (i >= 0) arr.splice(i, 1); else arr.push(key);
+    await App.saveCurrentJob();
+    await renderTree();
+  }
+
   async function renderTree() {
     const info = $('#templateInfo');
     const tree = $('#structureTree');
@@ -428,20 +444,28 @@ const App = (() => {
 
     tree.innerHTML = '';
     for (const [ober, unterMap] of grp) {
-      // Statistik (erledigt/gesamt) über alle Positionen des Oberordners.
       const allNodes = [];
       for (const list of unterMap.values()) for (const n of list) allNodes.push(n);
-      const oberDone = allNodes.filter((n) => n.done).length;
-      const oberAllDone = allNodes.length > 0 && oberDone >= allNodes.length;
+      // Statistik (erledigt/gesamt) nur über benötigte (nicht geskippte) Positionen.
+      const needed = allNodes.filter((n) => !n.skipped);
+      const oberDone = needed.filter((n) => n.done).length;
+      const oberAllDone = needed.length > 0 && oberDone >= needed.length;
+      const oberNotNeeded = allNodes.length > 0 && needed.length === 0;
+      const oberSkip = (skipSet('obers')).includes(ober);
       const oberExpanded = expandedObers.has(ober);
 
       const head = document.createElement('div');
-      head.className = 'tree-ober' + (oberExpanded ? ' open' : '') + (oberAllDone ? ' alldone' : '');
+      head.className = 'tree-ober' + (oberExpanded ? ' open' : '')
+        + (oberAllDone ? ' alldone' : '') + (oberNotNeeded ? ' skipped' : '');
       head.innerHTML = `<span class="chev">${oberExpanded ? '▼' : '▶'}</span>
         <span class="grp-name">${escHtml(ober)}</span>
         ${oberAllDone ? '<span class="grp-check" title="alle Pflichtbilder erledigt">✓</span>' : ''}
-        <span class="grp-stat${oberAllDone ? ' done' : ''}">${oberDone}/${allNodes.length}</span>`;
+        ${oberNotNeeded
+          ? '<span class="grp-stat skip">nicht benötigt</span>'
+          : `<span class="grp-stat${oberAllDone ? ' done' : ''}">${oberDone}/${needed.length}</span>`}
+        <button class="skip-btn" title="${oberSkip ? 'wieder benötigt' : 'als nicht benötigt markieren'}">${oberSkip ? '↩' : '∅'}</button>`;
       head.onclick = () => { toggleSet(expandedObers, ober); renderTree(); };
+      head.querySelector('.skip-btn').onclick = (e) => { e.stopPropagation(); toggleSkip('obers', ober); };
       tree.appendChild(head);
 
       if (!oberExpanded) continue; // Inhalt zugeklappter Ordner wird nicht gebaut
@@ -453,17 +477,25 @@ const App = (() => {
       for (const [uk, list] of unterMap) {
         if (uk) {
           const uKey = ober + Structure.SEP + uk;
-          const uDone = list.filter((n) => n.done).length;
-          const uAllDone = uDone >= list.length;
+          const uNeeded = list.filter((n) => !n.skipped);
+          const uDone = uNeeded.filter((n) => n.done).length;
+          const uAllDone = uNeeded.length > 0 && uDone >= uNeeded.length;
+          const uNotNeeded = list.length > 0 && uNeeded.length === 0;
+          const uSkip = (skipSet('unters')).includes(uKey);
           const uExpanded = expandedUnters.has(uKey);
 
           const uHead = document.createElement('div');
-          uHead.className = 'tree-unter' + (uExpanded ? ' open' : '') + (uAllDone ? ' alldone' : '');
+          uHead.className = 'tree-unter' + (uExpanded ? ' open' : '')
+            + (uAllDone ? ' alldone' : '') + (uNotNeeded ? ' skipped' : '');
           uHead.innerHTML = `<span class="chev">${uExpanded ? '▼' : '▶'}</span>
             <span class="grp-name">${escHtml(uk)}</span>
             ${uAllDone ? '<span class="grp-check" title="alle Pflichtbilder erledigt">✓</span>' : ''}
-            <span class="grp-stat${uAllDone ? ' done' : ''}">${uDone}/${list.length}</span>`;
+            ${uNotNeeded
+              ? '<span class="grp-stat skip">nicht benötigt</span>'
+              : `<span class="grp-stat${uAllDone ? ' done' : ''}">${uDone}/${uNeeded.length}</span>`}
+            <button class="skip-btn" title="${uSkip ? 'wieder benötigt' : 'als nicht benötigt markieren'}">${uSkip ? '↩' : '∅'}</button>`;
           uHead.onclick = () => { toggleSet(expandedUnters, uKey); renderTree(); };
+          uHead.querySelector('.skip-btn').onclick = (e) => { e.stopPropagation(); toggleSkip('unters', uKey); };
           body.appendChild(uHead);
 
           if (uExpanded) {
@@ -482,17 +514,23 @@ const App = (() => {
 
   async function nameRow(n) {
     const row = document.createElement('div');
-    row.className = 'name-row' + (n.done ? ' done' : '');
+    row.className = 'name-row' + (n.done ? ' done' : '') + (n.skipped ? ' skipped' : '');
+    const nodeSkip = (skipSet('nodes')).includes(n.key);
+    const statusLine = n.skipped
+      ? 'nicht benötigt'
+      : (n.done ? '<span class="row-check">✓</span> erledigt' : 'offen');
     row.innerHTML = `
-      <span class="count-badge">${n.ist}/${n.pflicht}</span>
+      <span class="count-badge">${n.skipped ? '–' : n.ist + '/' + n.pflicht}</span>
       <div class="name-main">
         <div class="name-label">${escHtml(n.bildname)}</div>
-        <div class="name-count">${n.done ? '<span class="row-check">✓</span> erledigt' : 'offen'}</div>
+        <div class="name-count">${statusLine}</div>
         <div class="thumbs"></div>
       </div>
+      <button class="skip-btn" title="${nodeSkip ? 'wieder benötigt' : 'als nicht benötigt markieren'}">${nodeSkip ? '↩' : '∅'}</button>
       <button class="gal-btn" title="Aus Galerie">🖼️</button>
       <button class="cam-btn" title="Foto aufnehmen">📷</button>`;
 
+    row.querySelector('.skip-btn').onclick = () => toggleSkip('nodes', n.key);
     row.querySelector('.cam-btn').onclick = () => pickPhoto(n, true);
     row.querySelector('.gal-btn').onclick = () => pickPhoto(n, false);
 
