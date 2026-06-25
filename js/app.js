@@ -516,19 +516,29 @@ const App = (() => {
     const row = document.createElement('div');
     row.className = 'name-row' + (n.done ? ' done' : '') + (n.skipped ? ' skipped' : '');
     const nodeSkip = (skipSet('nodes')).includes(n.key);
-    const statusLine = n.skipped
-      ? 'nicht benötigt'
-      : (n.done ? '<span class="row-check">✓</span> erledigt' : 'offen');
+    let statusLine;
+    if (n.skipped) {
+      statusLine = 'nicht benötigt';
+    } else {
+      statusLine = n.done ? '<span class="row-check">✓</span> erledigt' : 'offen';
+      // Vom Vorteam übernommene Bilder (per Übergabe-Import): liegen nicht physisch
+      // auf diesem Gerät, zählen aber als erledigt. Klar als „Vorteam" kennzeichnen.
+      if (n.prior > 0) {
+        statusLine += ` <span class="prior-tag" title="bereits vom vorherigen Team erledigt – Bilder liegen beim Vorteam">Vorteam: ${n.prior}</span>`;
+      }
+    }
     row.innerHTML = `
-      <span class="count-badge">${n.skipped ? '–' : n.ist + '/' + n.pflicht}</span>
-      <div class="name-main">
+      <div class="name-head">
+        <span class="count-badge">${n.skipped ? '–' : n.ist + '/' + n.pflicht}</span>
         <div class="name-label">${escHtml(n.bildname)}</div>
-        <div class="name-count">${statusLine}</div>
-        <div class="thumbs"></div>
       </div>
-      <button class="skip-btn" title="${nodeSkip ? 'wieder benötigt' : 'als nicht benötigt markieren'}">${nodeSkip ? '↩' : '∅'}</button>
-      <button class="gal-btn" title="Aus Galerie">🖼️</button>
-      <button class="cam-btn" title="Foto aufnehmen">📷</button>`;
+      <div class="name-count">${statusLine}</div>
+      <div class="thumbs"></div>
+      <div class="name-actions">
+        <button class="skip-btn" title="${nodeSkip ? 'wieder benötigt' : 'als nicht benötigt markieren'}">${nodeSkip ? '↩' : '∅'}</button>
+        <button class="gal-btn" title="Aus Galerie">🖼️</button>
+        <button class="cam-btn" title="Foto aufnehmen">📷</button>
+      </div>`;
 
     row.querySelector('.skip-btn').onclick = () => toggleSkip('nodes', n.key);
     row.querySelector('.cam-btn').onclick = () => pickPhoto(n, true);

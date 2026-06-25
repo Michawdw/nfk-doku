@@ -202,8 +202,8 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .tree-ober.open + .tree-body { border: 1px solid var(--line); border-top: none; border-radius: 0 0 12px 12px; padding: 6px 8px 10px; margin-bottom: 6px; }
 .name-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px;
   margin: 8px 0;
   border: 1px solid var(--line);
@@ -212,9 +212,18 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 }
 .name-row.done { background: var(--done-bg); color: var(--done-text); }
 .name-row.done .name-label { color: var(--done-text); }
-.name-main { flex: 1; min-width: 0; }
-.name-label { font-weight: 700; word-break: break-word; }
+.name-head { display: flex; align-items: center; gap: 10px; }
+.name-label { flex: 1; min-width: 0; font-weight: 700; word-break: break-word; }
 .name-count { font-size: 13px; color: var(--muted); }
+/* Aktions-Symbole (nicht benötigt / Galerie / Kamera) unter dem Namen, volle Breite */
+.name-actions { display: flex; gap: 10px; }
+.name-actions > button { flex: 1 1 0; width: auto; }
+/* Vom Vorteam (Übergabe-Import) erledigt – Bilder liegen nicht auf diesem Gerät */
+.prior-tag {
+  display: inline-block; background: #eaf2fb; color: var(--brand);
+  font-weight: 700; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  margin-left: 6px; vertical-align: middle;
+}
 .row-check { color: var(--ok); font-weight: 900; }
 .name-row.done .row-check { color: var(--ok); }
 .name-row.done .name-count { color: var(--done-text); }

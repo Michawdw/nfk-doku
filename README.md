@@ -33,6 +33,10 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
   nahtlos weiter** (`_03`, `_04`, …), sodass keine Doppelbilder entstehen und die Bild-ZIPs
   beider Teams im Büro kollisionsfrei zusammenpassen. (Sequenzielle Übergabe: Team A →
   Team B, kein gleichzeitiges Parallel-Arbeiten am selben Auftrag.)
+  Bereits vom Vorgänger erledigte Positionen werden mit dem Zähler übernommen und in der
+  Liste/Übersicht mit dem Badge **„Vorteam: N"** gekennzeichnet – so ist klar, dass diese
+  Bilder beim Vorteam liegen (sie sind **nicht** physisch auf dem aktuellen Gerät, daher ohne
+  Vorschaubild) und der grüne Haken vom anderen Team stammt.
 - **Bilddokumentation**
   - **Vorlagen-Katalog**: Mehrere Vorlagen stecken als Tabs in einer Datei
     (`assets/templates.xlsx`); jeder Tab = eine Vorlage, der Tab-Name ist der

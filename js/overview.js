@@ -9,8 +9,9 @@ const Overview = (() => {
     const counts = await Promise.all(nodes.map((n) => DB.countPhotos(job.id, n.key)));
     return nodes.map((n, i) => {
       const prior = (job.priorCounts && job.priorCounts[n.key]) || 0;
-      const ist = prior + counts[i];
-      return { ...n, ist, done: ist >= n.pflicht, skipped: Structure.isSkipped(n, job) };
+      const local = counts[i];
+      const ist = prior + local;
+      return { ...n, ist, prior, local, done: ist >= n.pflicht, skipped: Structure.isSkipped(n, job) };
     });
   }
 
@@ -36,9 +37,11 @@ const Overview = (() => {
           const cls = n.skipped ? 'ov-item skip' : (n.done ? 'ov-item done' : 'ov-item open');
           const mark = n.skipped ? '–' : (n.done ? '✓' : '○');
           const cnt = n.skipped ? 'nicht benötigt' : `${n.ist}/${n.pflicht}`;
+          const priorTag = (!n.skipped && n.prior > 0)
+            ? ` <span class="prior-tag" title="vom Vorteam erledigt">Vorteam: ${n.prior}</span>` : '';
           html += `<div class="${cls}">
               <span class="ov-mark">${mark}</span>
-              <span class="ov-name">${esc(n.bildname)}</span>
+              <span class="ov-name">${esc(n.bildname)}${priorTag}</span>
               <span class="ov-cnt">${cnt}</span>
             </div>`;
         }
