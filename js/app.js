@@ -19,7 +19,7 @@ const App = (() => {
     'view-bautagebuch': 'Bautagebuch',
   };
 
-  function show(viewId) {
+  function _switchView(viewId) {
     $$('.view').forEach((v) => v.classList.toggle('active', v.id === viewId));
     $('#topTitle').textContent = viewTitles[viewId] || 'NFK Doku';
     $('#backBtn').hidden = (viewId === 'view-start');
@@ -27,6 +27,13 @@ const App = (() => {
     if (viewId === 'view-start') renderBackupReminder('#backupReminderStart');
     if (viewId === 'view-bilddoku') enterBilddoku();
     if (viewId === 'view-bautagebuch') initDiaryView();
+  }
+
+  // Navigiert zur Ansicht und legt für Unteransichten einen History-Eintrag an,
+  // damit der Android-Zurück-Button dieselbe Wirkung hat wie der In-App-Pfeil.
+  function show(viewId) {
+    if (viewId !== 'view-start') history.pushState({ nfk: viewId }, '');
+    _switchView(viewId);
   }
 
   // ------------------------------------------------------------------- Helpers
@@ -815,7 +822,8 @@ const App = (() => {
 
   // ------------------------------------------------------------------- Init
   function bindEvents() {
-    $('#backBtn').onclick = () => show('view-start');
+    $('#backBtn').onclick = () => history.back();
+    window.addEventListener('popstate', () => _switchView('view-start'));
     $$('[data-go]').forEach((b) => b.onclick = () => show(b.dataset.go));
     $('#projectForm').addEventListener('submit', saveProjectForm);
     $('#addTechBtn').onclick = () => $('#techList').appendChild(techRow(''));
