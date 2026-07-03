@@ -11,8 +11,9 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
   („+ Neuer Auftrag", antippen zum Wechseln, ✎ zum Umbenennen). Jeder Auftrag hat eigene
   Stammdaten, Bilddoku-Struktur, Bilder und Bautagebuch-Tage. Baustellen über Wochen/mit
   Unterbrechungen bleiben so getrennt und jederzeit abrufbar.
-- **Projekt-Stammdaten** (je Auftrag): Filiale/Bauvorhaben, Ort, Datum, Beauftragung,
-  Techniker – werden für Bilddoku **und** Bautagebuch des Auftrags verwendet.
+- **Projekt-Stammdaten** (je Auftrag): Filiale/Bauvorhaben, Ort, Datum, Beauftragung –
+  werden für Bilddoku **und** Bautagebuch des Auftrags verwendet. Das **Team** wird nicht
+  hier, sondern **pro Tag direkt im Bautagebuch** eingetragen (die Belegung wechselt oft).
 - **Bildersicherheit**: Bilder liegen in IndexedDB; die App fordert beim Start
   **persistenten Speicher** an (Schutz vor automatischer Löschung). Echtes Backup =
   regelmäßiger **Bild-ZIP-Export** (enthält die Fotos). Beim Deinstallieren der App oder

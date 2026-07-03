@@ -129,16 +129,6 @@ const App = (() => {
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   const escAttr = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // ------------------------------------------------------------- Projektkopf
-  function techRow(value = '') {
-    const div = document.createElement('div');
-    div.className = 'tech-item';
-    div.innerHTML = `<input type="text" placeholder="Name" value="${escAttr(value)}" autocomplete="off" />
-      <button type="button" class="tech-del" aria-label="Entfernen">✕</button>`;
-    div.querySelector('.tech-del').onclick = () => div.remove();
-    return div;
-  }
-
   // ----------------------------------------------------- Auftrags-Verwaltung
   // Stellt sicher, dass ein aktiver Auftrag existiert (legt sonst „Auftrag 1" an).
   async function ensureCurrentJob() {
@@ -246,13 +236,10 @@ const App = (() => {
     await renderJobList();
     const h = (currentJob && currentJob.header) || {};
     const f = $('#projectForm');
-    const list = $('#techList');
-    list.innerHTML = '';
     f.filiale.value = h.filiale || '';
     f.ort.value = h.ort || '';
     f.datum.value = h.datum || new Date().toISOString().slice(0, 10);
     f.beauftragung.value = h.beauftragung || 'NFK Vollverkabelung';
-    (h.techniker && h.techniker.length ? h.techniker : ['']).forEach((t) => list.appendChild(techRow(t)));
     await renderBackupReminder('#backupReminderStart');
   }
 
@@ -315,13 +302,14 @@ const App = (() => {
   async function saveProjectForm(e) {
     e.preventDefault();
     const f = e.target;
-    const techniker = $$('#techList input').map((i) => i.value.trim()).filter(Boolean);
     currentJob.header = {
       filiale: f.filiale.value.trim(),
       ort: f.ort.value.trim(),
       datum: f.datum.value,
       beauftragung: f.beauftragung.value.trim() || 'NFK Vollverkabelung',
-      techniker,
+      // Team wird nicht mehr auf der Startseite gepflegt, sondern pro Tag im
+      // Bautagebuch. Vorhandenen Wert erhalten (u. a. für die Übergabe-Datei).
+      techniker: (currentJob.header && currentJob.header.techniker) || [],
     };
     // Auftragsname an Filiale koppeln, solange er nicht manuell vergeben wurde.
     if (!currentJob.name || /^Auftrag \d+$/.test(currentJob.name)) {
@@ -826,7 +814,6 @@ const App = (() => {
     window.addEventListener('popstate', () => _switchView('view-start'));
     $$('[data-go]').forEach((b) => b.onclick = () => show(b.dataset.go));
     $('#projectForm').addEventListener('submit', saveProjectForm);
-    $('#addTechBtn').onclick = () => $('#techList').appendChild(techRow(''));
     $('#newJobBtn').onclick = newJobFlow;
     $('#importTemplate').addEventListener('change', importTemplate);
     $('#templateSelect').addEventListener('change', onTemplateChange);
