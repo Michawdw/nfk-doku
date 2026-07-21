@@ -26,7 +26,12 @@ Kein Laptop, kein Backend, keine laufenden Kosten.
   normale ZIP-Export zählt als Sicherung. Wichtig: Eine ZIP ist erst dann ein echtes Backup,
   wenn sie **vom Handy weg** ist (z. B. über den Teilen-Dialog nach Google Drive oder an sich
   selbst). Die neueste ZIP enthält immer **alle** Bilder des Auftrags (alte + neue) – eine alte
-  ZIP muss nie „ergänzt" werden, sie wird einfach durch die neueste ersetzt.
+  ZIP muss nie „ergänzt" werden, sie wird einfach durch die neueste ersetzt. Der Dateiname
+  trägt das **Sicherungsdatum** (`Bilddoku_LI<Nr>_<Ort>_Stand_<Datum>.zip`), sodass die
+  neueste Sicherung sofort erkennbar ist und ältere ZIPs bedenkenlos gelöscht werden können
+  (die App selbst kann/darf keine Dateien im Download-Ordner oder in Drive löschen –
+  Browser-Sicherheitsmodell). Der ZIP-Export löscht **keine** Bilder aus der App; Speicher wird
+  frei, indem man **abgeschlossene Aufträge** nach Ablage der finalen ZIP löscht.
 - **Übergabe an anderes Team / Innendienst-Auswertung**: „Übergabe export (.xlsx)" erzeugt
   eine kleine Excel-Datei mit dem Zwischenstand (Position, Pflicht, Ist, Status) **ohne
   Bilder**. Der Innendienst kann sie direkt auswerten; ein anderes Team importiert sie per
@@ -153,8 +158,13 @@ auch lokal.)
 
 ## Updates / Wartung
 
-Bei Änderungen an App-Dateien die Cache-Version in [`sw.js`](sw.js) erhöhen
-(`const CACHE = 'nfk-doku-v2'` …), damit Clients die neue Version laden.
+Bei Änderungen an App-Dateien **zwei** Versions-Stellen gemeinsam erhöhen, damit
+Clients die neue Version laden **und** die Anzeige stimmt:
+1. `const CACHE = 'nfk-doku-vNN'` in [`sw.js`](sw.js) – löst den Austausch auf den Geräten aus.
+2. `const APP_VERSION = 'vNN'` in [`js/app.js`](js/app.js) – wird unten auf der Startseite als
+   „Version vNN" angezeigt (Sofort-Anzeige/Fallback). Autoritativ zeigt die Startseite ohnehin
+   die Cache-Version des laufenden Service Workers, den sie per `GET_VERSION` abfragt.
+
 Die Bilddoku-Struktur ändert man jederzeit über einen erneuten Template-Import –
 selbst angelegte Namen bleiben erhalten.
 

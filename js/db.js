@@ -205,8 +205,17 @@ const DB = (() => {
     return reqP(s.index('byJob').getAll(IDBKeyRange.only(jobId)));
   }
   async function addPhoto(rec) {
-    // rec: { jobId, nodeKey, seq, blob, createdAt, srcId }. Niemals update/delete.
+    // rec: { jobId, nodeKey, seq, blob, createdAt, srcId }. Bilddoku: niemals update/delete.
     return reqP((await store('photos', 'readwrite')).add(rec));
+  }
+  // Einzelnes Foto anhand seiner id löschen. Bewusst NUR für Vorprüfungs-/Behinderungsfotos
+  // gedacht (nodeKey-Präfix '__vorpruefung__'); die Bilddoku bleibt append-only.
+  async function deletePhotoById(id) {
+    return reqP((await store('photos', 'readwrite')).delete(id));
+  }
+  // Aktualisiert einzelne Felder eines Fotos (z. B. caption) – nur für Vorprüfungsfotos.
+  async function updatePhoto(rec) {
+    return reqP((await store('photos', 'readwrite')).put(rec));
   }
   // Menge der bereits vorhandenen Bild-IDs eines Auftrags (für Duplikatschutz beim Merge).
   async function getPhotoSrcIds(jobId) {
@@ -237,7 +246,7 @@ const DB = (() => {
     getMeta, setMeta, getDeviceId,
     listJobs, getJob, saveJob, createJob, deleteJob, newJob,
     getCurrentJobId, setCurrentJobId,
-    countPhotos, getPhotos, getAllPhotos, addPhoto, getPhotoSrcIds,
+    countPhotos, getPhotos, getAllPhotos, addPhoto, deletePhotoById, updatePhoto, getPhotoSrcIds,
     getDiary, saveDiary, listDiary, deleteDiary,
   };
 })();

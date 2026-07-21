@@ -15,6 +15,7 @@ const App = (() => {
   // ---------------------------------------------------------------- Navigation
   const viewTitles = {
     'view-start': 'NFK Doku',
+    'view-vorpruefung': 'Vorprüfung',
     'view-bilddoku': 'Bilddokumentation',
     'view-bautagebuch': 'Bautagebuch',
   };
@@ -24,9 +25,23 @@ const App = (() => {
     $('#topTitle').textContent = viewTitles[viewId] || 'NFK Doku';
     $('#backBtn').hidden = (viewId === 'view-start');
     window.scrollTo(0, 0);
-    if (viewId === 'view-start') renderBackupReminder('#backupReminderStart');
+    if (viewId === 'view-start') { renderVpStatus(); renderBackupReminder('#backupReminderStart'); }
+    if (viewId === 'view-vorpruefung') Vorpruefung.enter();
     if (viewId === 'view-bilddoku') enterBilddoku();
     if (viewId === 'view-bautagebuch') initDiaryView();
+  }
+
+  // Zugang zu Bilddoku/Bautagebuch erst, wenn die Vorprüfung des Auftrags vollständig
+  // beantwortet ist. Andernfalls zur Vorprüfung springen und offene Punkte markieren.
+  function goGuard(target) {
+    if ((target === 'view-bilddoku' || target === 'view-bautagebuch')
+        && Vorpruefung.isIncomplete(currentJob)) {
+      show('view-vorpruefung');
+      Vorpruefung.flagMissing();
+      toast('Bitte zuerst die Vorprüfung vollständig beantworten.');
+      return;
+    }
+    show(target);
   }
 
   // Navigiert zur Ansicht und legt für Unteransichten einen History-Eintrag an,
@@ -228,7 +243,9 @@ const App = (() => {
     await DB.setCurrentJobId(job.id);
     catalogNames = null;
     await loadStartView();
-    toast('Neuer Auftrag angelegt');
+    // Direkt in die Pflicht-Vorprüfung; erst danach sind Bilddoku/Bautagebuch verfügbar.
+    show('view-vorpruefung');
+    toast('Neuer Auftrag – bitte Vorprüfung ausfüllen');
   }
 
   // Füllt Auftragsliste + Projektkopf-Formular des aktiven Auftrags.
@@ -240,7 +257,30 @@ const App = (() => {
     f.ort.value = h.ort || '';
     f.datum.value = h.datum || new Date().toISOString().slice(0, 10);
     f.beauftragung.value = h.beauftragung || 'NFK Vollverkabelung';
+    renderVpStatus();
     await renderBackupReminder('#backupReminderStart');
+  }
+
+  // Zeigt auf der Startseite den Vorprüfungs-Status des aktiven Auftrags (Link zur View).
+  function renderVpStatus() {
+    const el = $('#vpStatus');
+    if (!el) return;
+    if (!currentJob) { el.hidden = true; return; }
+    const total = Vorpruefung.POINTS.length;
+    const answered = Vorpruefung.answeredCount(currentJob);
+    const done = !!(currentJob.vorpruefung && currentJob.vorpruefung.done);
+    el.hidden = false;
+    if (done) {
+      el.className = 'vp-status ok';
+      el.innerHTML = `<span>🔍 Vorprüfung ✓ abgeschlossen</span>
+        <button type="button" class="btn ghost vp-open">📄 Protokoll / ansehen</button>`;
+    } else {
+      el.className = 'vp-status open';
+      el.innerHTML = `<span>🔍 Vorprüfung offen (${answered}/${total} beantwortet)</span>
+        <button type="button" class="btn primary vp-open">Vorprüfung öffnen</button>`;
+    }
+    const btn = el.querySelector('.vp-open');
+    if (btn) btn.onclick = () => show('view-vorpruefung');
   }
 
   // --------------------------------------------------------- Backup-Erinnerung
@@ -812,7 +852,7 @@ const App = (() => {
   function bindEvents() {
     $('#backBtn').onclick = () => history.back();
     window.addEventListener('popstate', () => _switchView('view-start'));
-    $$('[data-go]').forEach((b) => b.onclick = () => show(b.dataset.go));
+    $$('[data-go]').forEach((b) => b.onclick = () => goGuard(b.dataset.go));
     $('#projectForm').addEventListener('submit', saveProjectForm);
     $('#newJobBtn').onclick = newJobFlow;
     $('#importTemplate').addEventListener('change', importTemplate);
@@ -837,13 +877,38 @@ const App = (() => {
     $('#netDot').classList.toggle('offline', !navigator.onLine);
   }
 
+  // Zeigt unten auf der Startseite die installierte App-Version an. Autoritativ ist
+  // die Cache-Version des laufenden Service Workers (per Nachricht abgefragt); solange
+  // die noch nicht geantwortet hat, dient APP_VERSION als Sofort-Anzeige/Fallback.
+  const APP_VERSION = 'v23'; // Bei jeder App-Änderung zusammen mit CACHE in sw.js erhöhen.
+  function renderAppVersion(v) {
+    const el = $('#appVersion');
+    if (!el) return;
+    const clean = String(v || APP_VERSION).replace('nfk-doku-', '');
+    el.textContent = 'Version ' + clean;
+  }
+  function initAppVersion() {
+    renderAppVersion();
+    if (!('serviceWorker' in navigator)) return;
+    const ask = () => {
+      if (navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage('GET_VERSION');
+    };
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'VERSION') renderAppVersion(e.data.version);
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', ask);
+    ask();
+  }
+
   async function init() {
     // Robust starten: UI bindet sich auch dann, wenn die Daten-Initialisierung
     // (z. B. IndexedDB) auf einem Gerät klemmt – die App darf nie hängenbleiben.
     try {
       setupPhotoInputs();
       bindEvents();
+      Vorpruefung.init();
       updateNetDot();
+      initAppVersion();
       window.addEventListener('online', updateNetDot);
       window.addEventListener('offline', updateNetDot);
       show('view-start');
@@ -918,5 +983,5 @@ const App = (() => {
   document.addEventListener('DOMContentLoaded', init);
 
   // Öffentlich für andere Module:
-  return { toast, openInfoModal, openFormModal, shareFile, show, getCurrentJob, saveCurrentJob };
+  return { toast, openInfoModal, openFormModal, openConfirm, shareFile, show, getCurrentJob, saveCurrentJob };
 })();

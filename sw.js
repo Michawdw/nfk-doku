@@ -1,6 +1,6 @@
 /* Service Worker – Precache der App-Shell für vollständigen Offline-Betrieb.
    Cache-Version bei jeder Änderung der Asset-Liste erhöhen. */
-const CACHE = 'nfk-doku-v20';
+const CACHE = 'nfk-doku-v23';
 
 const ASSETS = [
   './',
@@ -15,6 +15,8 @@ const ASSETS = [
   './js/bautagebuch.js',
   './js/handover.js',
   './js/merge.js',
+  './js/protokoll.js',
+  './js/vorpruefung.js',
   './lib/jszip.min.js',
   './lib/exceljs.min.js',
   './manifest.webmanifest',
@@ -35,6 +37,13 @@ self.addEventListener('install', (event) => {
       ))
     ).then(() => self.skipWaiting())
   );
+});
+
+// Version auf Anfrage der Seite zurückmelden (für die Versionsanzeige auf der Startseite).
+self.addEventListener('message', (event) => {
+  if (event.data === 'GET_VERSION' && event.source) {
+    event.source.postMessage({ type: 'VERSION', version: CACHE });
+  }
 });
 
 self.addEventListener('activate', (event) => {
