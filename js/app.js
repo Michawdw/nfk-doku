@@ -243,9 +243,9 @@ const App = (() => {
     await DB.setCurrentJobId(job.id);
     catalogNames = null;
     await loadStartView();
-    // Direkt in die Pflicht-Vorprüfung; erst danach sind Bilddoku/Bautagebuch verfügbar.
-    show('view-vorpruefung');
-    toast('Neuer Auftrag – bitte Vorprüfung ausfüllen');
+    // Kein direkter Sprung: erst Stammdaten ausfüllen + speichern, danach folgt die
+    // Vorprüfung automatisch (siehe saveProjectForm).
+    toast('Neuer Auftrag – bitte Stammdaten ausfüllen und speichern');
   }
 
   // Füllt Auftragsliste + Projektkopf-Formular des aktiven Auftrags.
@@ -357,10 +357,14 @@ const App = (() => {
     }
     await DB.saveJob(currentJob);
     await renderJobList();
+    renderVpStatus();
     const saved = $('#projectSaved');
     saved.hidden = false;
     setTimeout(() => { saved.hidden = true; }, 2000);
     toast('Stammdaten gespeichert');
+    // Nach dem Speichern der Stammdaten in die Pflicht-Vorprüfung wechseln, solange
+    // sie für diesen Auftrag noch nicht vollständig ist.
+    if (Vorpruefung.isIncomplete(currentJob)) show('view-vorpruefung');
   }
 
   // --------------------------------------------------------- Bilddoku-Tree

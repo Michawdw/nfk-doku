@@ -318,15 +318,17 @@ fieldset.techs legend { font-weight: 700; padding: 0 6px; }
 .vp-item.missing { border-color: var(--warn); box-shadow: 0 0 0 2px rgba(192,57,43,.18); }
 .vp-q { font-weight: 700; margin-bottom: 10px; word-break: break-word; }
 .vp-seg { display: flex; gap: 8px; }
-.vp-seg button {
+.vp-seg .vp-opt {
   flex: 1 1 0; min-height: var(--tap); border: 1px solid var(--line);
   background: #fff; color: var(--text); border-radius: 10px; font-size: 16px;
   font-weight: 700; cursor: pointer;
 }
-.vp-seg button:active { transform: translatey(1px); }
-.vp-seg .vp-io.active { background: var(--ok); border-color: var(--ok); color: #fff; }
-.vp-seg .vp-nio.active { background: var(--warn); border-color: var(--warn); color: #fff; }
-.vp-seg button:disabled { opacity: .7; cursor: default; }
+.vp-seg .vp-opt:active { transform: translatey(1px); }
+.vp-seg .vp-opt.active.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+.vp-seg .vp-opt.active.warn { background: var(--warn); border-color: var(--warn); color: #fff; }
+.vp-seg .vp-opt.active.neutral { background: var(--brand); border-color: var(--brand); color: #fff; }
+.vp-seg .vp-opt:disabled { opacity: .7; cursor: default; }
+.btn:disabled { opacity: .5; cursor: default; transform: none; }
 .vp-detail { margin-top: 12px; }
 .vp-textlabel { display: block; font-weight: 600; font-size: 14px; }
 .vp-text {

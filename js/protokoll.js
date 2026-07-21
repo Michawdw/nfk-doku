@@ -103,25 +103,23 @@ const Protokoll = (() => {
     const points = model.points || [];
     for (let idx = 0; idx < points.length; idx++) {
       const pt = points[idx];
-      const nio = pt.status === 'nio';
-      const statusTxt = nio ? 'nicht i.O.' : 'i.O.';
-      body.push(pBold(`${idx + 1}. ${pt.titel} — ${statusTxt}`));
-      if (nio) {
-        if (pt.text && pt.text.trim()) body.push(pText(pt.text));
-        for (const ph of (pt.photos || [])) {
-          if (!ph || !ph.blob) continue;
-          seq++;
-          let emu;
-          try {
-            emu = emuSize(await imageSizePx(ph.blob));
-          } catch (e) {
-            emu = { cx: MAX_W_EMU, cy: Math.round(MAX_W_EMU * 3 / 4) }; // 4:3-Fallback
-          }
-          zip.file(`word/media/image${seq}.jpeg`, ph.blob);
-          rels.push({ id: seq, target: `media/image${seq}.jpeg` });
-          body.push(drawingParagraph(seq, emu));
-          if (ph.caption && ph.caption.trim()) body.push(pText(ph.caption));
+      const statusTxt = pt.statusLabel != null ? pt.statusLabel
+        : (pt.status === 'nio' ? 'nicht i.O.' : 'i.O.'); // Rückwärtskompatibel
+      body.push(pBold(`${idx + 1}. ${pt.titel}${statusTxt ? ' — ' + statusTxt : ''}`));
+      if (pt.text && pt.text.trim()) body.push(pText(pt.text));
+      for (const ph of (pt.photos || [])) {
+        if (!ph || !ph.blob) continue;
+        seq++;
+        let emu;
+        try {
+          emu = emuSize(await imageSizePx(ph.blob));
+        } catch (e) {
+          emu = { cx: MAX_W_EMU, cy: Math.round(MAX_W_EMU * 3 / 4) }; // 4:3-Fallback
         }
+        zip.file(`word/media/image${seq}.jpeg`, ph.blob);
+        rels.push({ id: seq, target: `media/image${seq}.jpeg` });
+        body.push(drawingParagraph(seq, emu));
+        if (ph.caption && ph.caption.trim()) body.push(pText(ph.caption));
       }
       body.push(pEmpty());
     }

@@ -1,26 +1,34 @@
 /* vorpruefung.js – Baustellen-Vorprüfung (Pflicht-Checkliste vor Arbeitsbeginn).
-   7 feste Prüfpunkte, je Punkt „i.O." / „nicht i.O.". Bei „nicht i.O." Freitext +
-   beliebig viele Fotos (mit Bildunterschrift). Erscheint einmalig nach dem Anlegen
-   eines Auftrags; solange ein Punkt unbeantwortet ist, ist keine weitere Bearbeitung
-   möglich (Gating in app.js über isIncomplete/flagMissing). Nach Abschluss read-only.
+   Feste Prüfpunkte mit je zwei Auswahlmöglichkeiten. Manche Optionen öffnen einen
+   Detailblock (Freitext + Fotos mit Bildunterschrift); bei einzelnen Optionen ist der
+   Freitext Pflicht. Die Vorprüfung erscheint nach dem Speichern der Stammdaten eines
+   neuen Auftrags; solange sie nicht vollständig ist, ist keine weitere Bearbeitung
+   möglich (Gating in app.js über isIncomplete/flagMissing). Vor dem Protokoll-Download
+   muss „Vorprüfung abschließen" betätigt werden (danach read-only).
 
    Daten liegen am Job-Objekt (kein DB-Schema-Bump):
-     job.vorpruefung = { done, completedAt, items: { p1: {status:'io'|'nio'|null, text}, ... } }
+     job.vorpruefung = { done, completedAt, items: { p1: {status:<optionwert>|null, text}, ... } }
    Fotos liegen im photos-Store mit reserviertem nodeKey '__vorpruefung__<pid>'
    (Feld kind:'vorpruefung', caption) – dadurch tauchen sie nie in der Bilddoku auf.
+
+   Option-Felder: { v: Wert, label: Anzeige, detail?: öffnet Freitext+Fotos,
+                    requireText?: Freitext ist Pflicht }
 */
 const Vorpruefung = (() => {
   const $ = (sel, root = document) => root.querySelector(sel);
 
   const NS = '__vorpruefung__';
+  const IO = [{ v: 'io', label: 'i.O.' }, { v: 'nio', label: 'nicht i.O.', detail: true }];
   const POINTS = [
-    { id: 'p1', titel: 'Kontrolle Trassenplan / Kabelwege / Gitterrinne oberhalb NWS' },
-    { id: 'p2', titel: 'Transport Einbringung der NWS möglich' },
-    { id: 'p3', titel: 'Brandschott noch nicht geschlossen' },
-    { id: 'p4', titel: 'OWA Raster und Decke noch offen für die Verkabelung' },
-    { id: 'p5', titel: 'Kontrolle Ladenlayout FK-Fresh oder FK 2025' },
-    { id: 'p6', titel: 'Übergabe Sage glass und Teile buchen' },
-    { id: 'p7', titel: 'Kleinverteiler Seriennummer buchen' },
+    { id: 'p1', titel: 'Kontrolle Trassenplan / Kabelwege / Gitterrinne oberhalb NWS', options: IO },
+    { id: 'p2', titel: 'Transport Einbringung der NWS möglich', options: IO },
+    { id: 'p3', titel: 'Brandschott noch nicht geschlossen', options: IO },
+    { id: 'p4', titel: 'OWA Raster und Decke noch offen für die Verkabelung', options: IO },
+    { id: 'p5', titel: 'Ladenlayout', options: [{ v: 'fk2025', label: 'FK 2025' }, { v: 'fkfresh', label: 'FK Fresh' }] },
+    { id: 'p6', titel: 'Übergabe Sage glass und Teile buchen',
+      options: [{ v: 'erledigt', label: 'erledigt' }, { v: 'nichtmoeglich', label: 'nicht möglich', detail: true, requireText: true }] },
+    { id: 'p7', titel: 'Kleinverteiler Seriennummer buchen',
+      options: [{ v: 'erledigt', label: 'erledigt' }, { v: 'nichtmoeglich', label: 'nicht möglich', detail: true, requireText: true }] },
   ];
 
   const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -33,8 +41,18 @@ const Vorpruefung = (() => {
   let lastRender = Promise.resolve();
 
   const nodeKeyFor = (pid) => NS + pid;
+  const optOf = (point, item) => (item && point.options.find((o) => o.v === item.status)) || null;
+  // Hat der Punkt überhaupt eine „Problem/Behinderungs"-Option (mit Detailblock)?
+  const hasDetail = (point) => point.options.some((o) => o.detail);
 
-  // Legt das vorpruefung-Objekt am Job an, falls es fehlt, und füllt alle Punkte.
+  // Ist ein Punkt vollständig? Option gewählt UND ggf. Pflicht-Freitext gefüllt.
+  function pointComplete(point, item) {
+    const opt = optOf(point, item);
+    if (!opt) return false;
+    if (opt.requireText && !(item.text || '').trim()) return false;
+    return true;
+  }
+
   function ensureModel(job) {
     if (!job.vorpruefung) job.vorpruefung = { done: false, completedAt: null, items: {} };
     const v = job.vorpruefung;
@@ -43,21 +61,15 @@ const Vorpruefung = (() => {
     return v;
   }
 
-  // Ist die Vorprüfung unvollständig (mind. ein Punkt ohne Antwort)? Steuert das Gating.
+  // Für das Gating: unvollständig, wenn irgendein Punkt nicht vollständig ist.
   function isIncomplete(job) {
     if (!job || !job.vorpruefung || !job.vorpruefung.items) return true;
-    return POINTS.some((p) => {
-      const it = job.vorpruefung.items[p.id];
-      return !it || (it.status !== 'io' && it.status !== 'nio');
-    });
+    return POINTS.some((p) => !pointComplete(p, job.vorpruefung.items[p.id] || {}));
   }
 
   function answeredCount(job) {
     if (!job || !job.vorpruefung || !job.vorpruefung.items) return 0;
-    return POINTS.filter((p) => {
-      const it = job.vorpruefung.items[p.id];
-      return it && (it.status === 'io' || it.status === 'nio');
-    }).length;
+    return POINTS.filter((p) => pointComplete(p, job.vorpruefung.items[p.id] || {})).length;
   }
 
   function scheduleSave() {
@@ -85,8 +97,7 @@ const Vorpruefung = (() => {
     e.target.value = '';
     if (!files.length || !currentPointId) return;
     const job = App.getCurrentJob();
-    const pid = currentPointId;
-    const nodeKey = nodeKeyFor(pid);
+    const nodeKey = nodeKeyFor(currentPointId);
     const deviceId = await DB.getDeviceId();
     for (const file of files) {
       try {
@@ -117,19 +128,17 @@ const Vorpruefung = (() => {
     const v = ensureModel(job);
     const ro = !!v.done;
 
-    // Intro / Kopf
     const name = job.name || (job.header && job.header.filiale) || 'Auftrag';
     if (intro) {
       intro.innerHTML = ro
         ? `<p class="hint">Vorprüfung für <b>${escHtml(name)}</b> – <b>abgeschlossen</b>${
             v.completedAt ? ' am ' + new Date(v.completedAt).toLocaleString('de-DE') : ''
           }. Die Angaben sind nicht mehr änderbar; das Protokoll kann erneut versendet werden.</p>`
-        : `<p class="hint">Pflicht-Vorprüfung für <b>${escHtml(name)}</b>. Bitte jeden Punkt mit
-            <b>i.O.</b> oder <b>nicht i.O.</b> beantworten. Erst danach sind Bilddokumentation und
-            Bautagebuch verfügbar. Bei „nicht i.O." Beschreibung und Fotos der Behinderung ergänzen.</p>`;
+        : `<p class="hint">Pflicht-Vorprüfung für <b>${escHtml(name)}</b>. Bitte jeden Punkt beantworten.
+            Erst danach sind Bilddokumentation und Bautagebuch verfügbar. Vor dem Protokoll-Download
+            unten auf <b>„✓ Vorprüfung abschließen"</b> tippen.</p>`;
     }
 
-    // Liste neu aufbauen
     activeUrls.forEach((u) => URL.revokeObjectURL(u));
     activeUrls = [];
     list.innerHTML = '';
@@ -137,19 +146,30 @@ const Vorpruefung = (() => {
     for (let i = 0; i < POINTS.length; i++) {
       const p = POINTS[i];
       const it = v.items[p.id];
+      const sel = optOf(p, it);
+      const detailOpen = !!(sel && sel.detail);
+      const classify = hasDetail(p); // ok/problem-Punkt (grün/rot) vs. neutrale Klassifikation (blau)
+
+      const segButtons = p.options.map((o) => {
+        const active = it.status === o.v;
+        let kind = 'neutral';
+        if (classify) kind = o.detail ? 'warn' : 'ok';
+        return `<button type="button" class="vp-opt${active ? ' active ' + kind : ''}"
+          data-val="${escAttr(o.v)}"${ro ? ' disabled' : ''}>${escHtml(o.label)}</button>`;
+      }).join('');
+
+      const textLabel = (sel && sel.requireText)
+        ? 'Begründung – warum nicht möglich? (Pflichtfeld)'
+        : 'Beschreibung der Behinderung';
+
       const card = document.createElement('div');
       card.className = 'vp-item';
       card.dataset.pid = p.id;
-      const isIo = it.status === 'io';
-      const isNio = it.status === 'nio';
       card.innerHTML = `
         <div class="vp-q">${i + 1}. ${escHtml(p.titel)}</div>
-        <div class="vp-seg" role="group" aria-label="Status">
-          <button type="button" class="vp-io${isIo ? ' active' : ''}"${ro ? ' disabled' : ''}>i.O.</button>
-          <button type="button" class="vp-nio${isNio ? ' active' : ''}"${ro ? ' disabled' : ''}>nicht i.O.</button>
-        </div>
-        <div class="vp-detail"${isNio ? '' : ' hidden'}>
-          <label class="vp-textlabel">Beschreibung der Behinderung
+        <div class="vp-seg" role="group" aria-label="Auswahl">${segButtons}</div>
+        <div class="vp-detail"${detailOpen ? '' : ' hidden'}>
+          <label class="vp-textlabel">${escHtml(textLabel)}
             <textarea class="vp-text" rows="3"${ro ? ' disabled' : ''}>${escHtml(it.text || '')}</textarea>
           </label>
           <div class="vp-photos"></div>
@@ -159,17 +179,21 @@ const Vorpruefung = (() => {
           </div>`}
         </div>`;
 
-      // Status-Umschalter
-      const ioBtn = card.querySelector('.vp-io');
-      const nioBtn = card.querySelector('.vp-nio');
+      // Auswahl-Umschalter
       if (!ro) {
-        ioBtn.onclick = async () => { it.status = 'io'; card.classList.remove('missing'); await App.saveCurrentJob(); await renderList(); };
-        nioBtn.onclick = async () => { it.status = 'nio'; card.classList.remove('missing'); await App.saveCurrentJob(); await renderList(); };
+        card.querySelectorAll('.vp-opt').forEach((btn) => {
+          btn.onclick = async () => {
+            it.status = btn.dataset.val;
+            card.classList.remove('missing');
+            await App.saveCurrentJob();
+            await renderList();
+          };
+        });
       }
 
       // Freitext
       const ta = card.querySelector('.vp-text');
-      if (ta && !ro) ta.oninput = () => { it.text = ta.value; scheduleSave(); };
+      if (ta && !ro) ta.oninput = () => { it.text = ta.value; card.classList.remove('missing'); scheduleSave(); };
 
       // Foto-Buttons
       if (!ro) {
@@ -180,12 +204,13 @@ const Vorpruefung = (() => {
       }
 
       list.appendChild(card);
-      if (isNio) await renderThumbs(card, job, p.id, ro);
+      if (detailOpen) await renderThumbs(card, job, p.id, ro);
     }
 
-    // Footer
     const completeBtn = $('#vpCompleteBtn');
     if (completeBtn) completeBtn.hidden = ro;
+    const protoBtn = $('#vpProtokollBtn');
+    if (protoBtn) protoBtn.disabled = !ro; // Download erst nach „abschließen"
     const doneNote = $('#vpDoneNote');
     if (doneNote) doneNote.hidden = !ro;
   }
@@ -218,7 +243,7 @@ const Vorpruefung = (() => {
     }
   }
 
-  // Markiert offene Punkte rot und springt zum ersten offenen Punkt.
+  // Markiert unvollständige Punkte rot und springt zum ersten davon.
   async function flagMissing() {
     await lastRender;
     const job = App.getCurrentJob();
@@ -226,11 +251,10 @@ const Vorpruefung = (() => {
     const v = ensureModel(job);
     let first = null;
     for (const p of POINTS) {
-      const it = v.items[p.id];
-      const missing = !it || (it.status !== 'io' && it.status !== 'nio');
+      const bad = !pointComplete(p, v.items[p.id] || {});
       const card = document.querySelector(`.vp-item[data-pid="${p.id}"]`);
-      if (card) card.classList.toggle('missing', missing);
-      if (missing && !first) first = card;
+      if (card) card.classList.toggle('missing', bad);
+      if (bad && !first) first = card;
     }
     if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -241,36 +265,33 @@ const Vorpruefung = (() => {
     ensureModel(job);
     if (isIncomplete(job)) {
       await flagMissing();
-      App.toast('Bitte alle Punkte beantworten.');
+      App.toast('Bitte alle Punkte vollständig ausfüllen (inkl. Pflicht-Begründungen).');
       return;
     }
     job.vorpruefung.done = true;
     job.vorpruefung.completedAt = Date.now();
     await App.saveCurrentJob();
     await renderList();
-    App.toast('Vorprüfung abgeschlossen');
+    App.toast('Vorprüfung abgeschlossen – Protokoll kann jetzt erstellt werden');
   }
 
   async function makeProtokoll() {
     const job = App.getCurrentJob();
     if (!job) return;
     const v = ensureModel(job);
-    if (isIncomplete(job)) {
-      await flagMissing();
-      App.toast('Bitte zuerst alle Punkte beantworten.');
+    if (!v.done) {
+      App.toast('Bitte zuerst „✓ Vorprüfung abschließen" betätigen.');
       return;
     }
     const h = job.header || {};
     const points = [];
     for (const p of POINTS) {
       const it = v.items[p.id] || {};
-      const nio = it.status === 'nio';
+      const opt = optOf(p, it);
       const photos = [];
-      if (nio) {
-        const recs = await DB.getPhotos(job.id, nodeKeyFor(p.id));
-        for (const r of recs) photos.push({ blob: r.blob, caption: r.caption || '' });
-      }
-      points.push({ titel: p.titel, status: nio ? 'nio' : 'io', text: it.text || '', photos });
+      const recs = await DB.getPhotos(job.id, nodeKeyFor(p.id));
+      for (const r of recs) photos.push({ blob: r.blob, caption: r.caption || '' });
+      points.push({ titel: p.titel, statusLabel: opt ? opt.label : '—', text: it.text || '', photos });
     }
     const model = {
       filiale: h.filiale || '', ort: h.ort || '', datum: h.datum || '',
@@ -287,7 +308,6 @@ const Vorpruefung = (() => {
     }
   }
 
-  // Footer-Buttons einmalig binden.
   function init() {
     setupInputs();
     const completeBtn = $('#vpCompleteBtn');
