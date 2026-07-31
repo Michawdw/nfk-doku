@@ -1,6 +1,6 @@
 /* Service Worker – Precache der App-Shell für vollständigen Offline-Betrieb.
    Cache-Version bei jeder Änderung der Asset-Liste erhöhen. */
-const CACHE = 'nfk-doku-v24';
+const CACHE = 'nfk-doku-v34';
 
 const ASSETS = [
   './',
@@ -15,7 +15,9 @@ const ASSETS = [
   './js/bautagebuch.js',
   './js/handover.js',
   './js/merge.js',
+  './js/docx.js',
   './js/protokoll.js',
+  './js/behinderung.js',
   './js/vorpruefung.js',
   './lib/jszip.min.js',
   './lib/exceljs.min.js',
@@ -30,10 +32,18 @@ const ASSETS = [
 self.addEventListener('install', (event) => {
   // Einzeln cachen statt addAll: ein einzelnes fehlendes Asset darf die
   // Installation nicht abbrechen lassen (sonst bleibt eine alte Version aktiv).
+  // WICHTIG: fetch mit cache:'reload' statt cache.add – sonst darf der Browser die
+  // Dateien aus seinem eigenen HTTP-Cache liefern und eine neue Version cacht
+  // versehentlich wieder die ALTEN Dateien ein.
   event.waitUntil(
     caches.open(CACHE).then((cache) =>
       Promise.all(ASSETS.map((url) =>
-        cache.add(url).catch((e) => console.warn('Precache übersprungen:', url, e))
+        fetch(url, { cache: 'reload' })
+          .then((res) => {
+            if (!res || !res.ok) throw new Error('HTTP ' + (res && res.status));
+            return cache.put(url, res);
+          })
+          .catch((e) => console.warn('Precache übersprungen:', url, e))
       ))
     ).then(() => self.skipWaiting())
   );

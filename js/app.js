@@ -18,6 +18,7 @@ const App = (() => {
     'view-vorpruefung': 'Vorprüfung',
     'view-bilddoku': 'Bilddokumentation',
     'view-bautagebuch': 'Bautagebuch',
+    'view-behinderung': 'Baubehinderungsanzeige',
   };
 
   function _switchView(viewId) {
@@ -29,10 +30,13 @@ const App = (() => {
     if (viewId === 'view-vorpruefung') Vorpruefung.enter();
     if (viewId === 'view-bilddoku') enterBilddoku();
     if (viewId === 'view-bautagebuch') initDiaryView();
+    if (viewId === 'view-behinderung') Behinderung.enter();
   }
 
   // Zugang zu Bilddoku/Bautagebuch erst, wenn die Vorprüfung des Auftrags vollständig
   // beantwortet ist. Andernfalls zur Vorprüfung springen und offene Punkte markieren.
+  // Die Baubehinderungsanzeige ist bewusst NICHT gesperrt: eine Behinderung tritt oft
+  // schon beim Antreffen der Baustelle auf, also vor Abschluss der Vorprüfung.
   function goGuard(target) {
     if ((target === 'view-bilddoku' || target === 'view-bautagebuch')
         && Vorpruefung.isIncomplete(currentJob)) {
@@ -67,7 +71,11 @@ const App = (() => {
     $('#modalOk').textContent = 'Schließen';
     const overlay = $('#modalOverlay');
     overlay.hidden = false;
-    $('#modalOk').onclick = () => { overlay.hidden = true; };
+    const close = () => { overlay.hidden = true; };
+    $('#modalOk').onclick = close;
+    $('#modalClose').onclick = close;   // ✕ oben in der klebenden Kopfzeile
+    $('#modalBody').scrollTop = 0;
+    $('.modal', overlay).scrollTop = 0; // lange Inhalte immer oben starten
   }
 
   // Generisches Formular-Modal. fields: [{name,label,type,value,placeholder,required}]
@@ -89,6 +97,7 @@ const App = (() => {
     const overlay = $('#modalOverlay');
     overlay.hidden = false;
     $('#modalCancel').onclick = () => { overlay.hidden = true; };
+    $('#modalClose').onclick = () => { overlay.hidden = true; }; // ✕ = Abbrechen
     $('#modalOk').onclick = () => {
       const data = {};
       $$('#modalBody [name]').forEach((el) => { data[el.name] = el.value.trim(); });
@@ -116,6 +125,7 @@ const App = (() => {
         resolve(val);
       };
       cancel.onclick = () => finish(false);
+      $('#modalClose').onclick = () => finish(false); // ✕ = Abbrechen (Promise auflösen!)
       ok.onclick = () => finish(true);
       overlay.onclick = (e) => { if (e.target === overlay) finish(false); }; // Tippen daneben = Abbrechen
     });
@@ -294,7 +304,9 @@ const App = (() => {
     const job = currentJob;
     if (!job) { el.hidden = true; return; }
 
-    const photos = await DB.getAllPhotos(job.id);
+    // Nur Bilddoku-Bilder: Fotos aus Vorprüfung und Baubehinderungsanzeige stecken nicht
+    // im ZIP-Export, dürfen die Sicherungswarnung also weder auslösen noch hochzählen.
+    const photos = await DB.getBilddokuPhotos(job.id);
     if (!photos.length) { el.hidden = true; return; } // nichts zu verlieren
 
     const last = job.lastBackupAt || 0;
@@ -591,9 +603,50 @@ const App = (() => {
       const wrap = document.createElement('div');
       wrap.className = 'thumb-wrap';
       wrap.innerHTML = `<img src="${url}" alt="" loading="lazy" /><span class="thumb-seq">${String(p.seq).padStart(2, '0')}</span>`;
+      wrap.onclick = () => openPhotoViewer(n, p, url);
       thumbs.appendChild(wrap);
     }
     return row;
+  }
+
+  // Bild groß anzeigen (damit auf dem Handy erkennbar ist, um welches Bild es geht)
+  // mit der Möglichkeit, genau dieses Bild zu löschen.
+  function openPhotoViewer(node, photo, url) {
+    const overlay = $('#photoOverlay');
+    $('#photoTitle').textContent = node.bildname;
+    $('#photoSub').textContent = 'Bild ' + String(photo.seq).padStart(2, '0') +
+      (node.unter ? ' · ' + node.unter : '') + ' · ' + node.ober;
+    $('#photoImg').src = url;
+    overlay.hidden = false;
+
+    const close = () => {
+      overlay.hidden = true;
+      overlay.onclick = null;
+      $('#photoImg').removeAttribute('src'); // Object-URL nicht länger als nötig binden
+    };
+    $('#photoClose').onclick = close;
+    overlay.onclick = (e) => { if (e.target === overlay) close(); }; // daneben tippen = schließen
+
+    $('#photoDelete').onclick = async () => {
+      const ok = await openConfirm(
+        'Bild löschen?',
+        `<p>Bild <b>${String(photo.seq).padStart(2, '0')}</b> von
+         „${escHtml(node.bildname)}" wirklich löschen?</p>
+         <p class="hint">Das Bild wird endgültig vom Gerät entfernt. Die übrigen Bilder
+         dieser Position werden anschließend neu durchnummeriert.</p>`,
+        'Löschen', true);
+      if (!ok) return;
+      close();
+      try {
+        await Photos.deleteFromNode(node.key, photo.id);
+        await renderTree();
+        await renderBackupReminder('#backupReminder');
+        toast('Bild gelöscht');
+      } catch (err) {
+        console.error(err);
+        toast('Fehler beim Löschen des Bildes');
+      }
+    };
   }
 
   // Versteckte File-Inputs (Kamera mit capture, Galerie ohne) gemeinsam genutzt.
@@ -884,7 +937,7 @@ const App = (() => {
   // Zeigt unten auf der Startseite die installierte App-Version an. Autoritativ ist
   // die Cache-Version des laufenden Service Workers (per Nachricht abgefragt); solange
   // die noch nicht geantwortet hat, dient APP_VERSION als Sofort-Anzeige/Fallback.
-  const APP_VERSION = 'v24'; // Bei jeder App-Änderung zusammen mit CACHE in sw.js erhöhen.
+  const APP_VERSION = 'v34'; // Bei jeder App-Änderung zusammen mit CACHE in sw.js erhöhen.
   function renderAppVersion(v) {
     const el = $('#appVersion');
     if (!el) return;
@@ -911,6 +964,7 @@ const App = (() => {
       setupPhotoInputs();
       bindEvents();
       Vorpruefung.init();
+      Behinderung.init();
       updateNetDot();
       initAppVersion();
       window.addEventListener('online', updateNetDot);

@@ -62,6 +62,11 @@
           <span class="bigbtn-title">Bautagebuch</span>
           <span class="bigbtn-sub">Täglich als Excel exportieren</span>
         </button>
+        <button class="bigbtn" data-go="view-behinderung">
+          <span class="bigbtn-emoji">⚠️</span>
+          <span class="bigbtn-title">Baubehinderungsanzeige</span>
+          <span class="bigbtn-sub">Word-Anzeige nach VOB/B mit Fotos</span>
+        </button>
       </div>
 
       <div id="appVersion" class="app-version" title="Installierte App-Version dieses Geräts"></div>
@@ -152,16 +157,124 @@
         <span id="diarySaved" class="saved" hidden>✓ gespeichert</span>
       </form>
     </section>
+
+    <!-- ===================== BAUBEHINDERUNGSANZEIGE ===================== -->
+    <section id="view-behinderung" class="view">
+      <h3 class="arch-head">Gespeicherte Behinderungsanzeigen</h3>
+      <div id="bhArchive" class="diary-archive"></div>
+
+      <div id="bhSenderBanner" class="backup-banner" hidden></div>
+      <div class="toolrow">
+        <button type="button" id="bhSenderBtn" class="btn ghost">🏢 Absenderdaten</button>
+        <button type="button" id="bhNewBtn" class="btn ghost">+ Neue Anzeige</button>
+      </div>
+
+      <form id="bhForm" class="form">
+        <fieldset class="bh-addr">
+          <legend>Empfänger (Auftraggeber / Bauleitung)</legend>
+          <p class="hint bh-addr-hint">Nur ausfüllen, was bekannt ist – leere Felder erscheinen nicht im Schreiben.</p>
+          <label>Firma
+            <input name="empfFirma" placeholder="Muster Bau GmbH" autocomplete="off" />
+          </label>
+          <label>Ansprechpartner / Bauleitung
+            <input name="empfAnsprech" placeholder="Herr/Frau …" autocomplete="off" />
+          </label>
+          <label>Straße, Hausnummer
+            <input name="empfStrasse" autocomplete="off" />
+          </label>
+          <label>PLZ, Ort
+            <input name="empfPlzOrt" autocomplete="off" />
+          </label>
+        </fieldset>
+
+        <div class="grid2">
+          <label>Datum der Anzeige
+            <input name="datum" type="date" />
+          </label>
+          <label>Behinderung besteht seit
+            <input name="behindertSeit" type="date" />
+          </label>
+        </div>
+        <div class="grid2">
+          <label>Gewerk
+            <input name="gewerk" placeholder="NFK Vollverkabelung" autocomplete="off" />
+          </label>
+          <label>Auftrags-/Bestellnummer
+            <input name="bestellnummer" autocomplete="off" />
+          </label>
+        </div>
+
+        <label>Grund der Behinderung <span class="req">*</span>
+          <textarea name="grund" rows="4"
+            placeholder="z. B. Die für unsere Arbeiten erforderliche Vorleistung ist bislang nicht fertiggestellt."></textarea>
+        </label>
+        <label>Betroffene Leistungen / Arbeiten, die nicht ausgeführt werden können <span class="req">*</span>
+          <textarea name="betroffeneLeistungen" rows="4"
+            placeholder="Welche Arbeiten/Gewerke konkret nicht ausgeführt werden können"></textarea>
+        </label>
+        <label>Voraussichtliche Dauer der Behinderung <span class="req">*</span>
+          <textarea name="dauer" rows="2"
+            placeholder="z. B. derzeit nicht abschließend bezifferbar oder ca. 2 Wochen"></textarea>
+        </label>
+
+        <div id="bhPhotoBlock" class="bh-photoblock">
+          <h3>Bilddokumentation <span class="req">*</span></h3>
+          <div id="bhPhotos" class="vp-photos"></div>
+          <div class="toolrow">
+            <button type="button" id="bhCamBtn" class="btn ghost">📷 Foto</button>
+            <button type="button" id="bhGalBtn" class="btn ghost">🖼 Galerie</button>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <label>Unterzeichner – Name
+            <input name="untName" autocomplete="off" />
+          </label>
+          <label>Funktion / Firma
+            <input name="untFunktion" autocomplete="off" />
+          </label>
+        </div>
+        <label>Zeile „Ort, den Datum"
+          <input name="ortDatum" placeholder="Memmingen, den 29.07.2026" autocomplete="off" />
+        </label>
+
+        <div class="toolrow">
+          <button type="button" id="bhSaveBtn" class="btn ghost">💾 Speichern</button>
+          <button type="button" id="bhExportBtn" class="btn primary">📄 Word erstellen</button>
+        </div>
+        <span id="bhSaved" class="saved" hidden>✓ gespeichert</span>
+      </form>
+    </section>
   </main>
 
   <!-- ===================== MODAL (generisch) ===================== -->
   <div id="modalOverlay" class="modal-overlay" hidden>
     <div class="modal" role="dialog" aria-modal="true">
-      <h3 id="modalTitle"></h3>
+      <!-- Kopfzeile bleibt beim Scrollen stehen, damit lange Inhalte (z. B. die Übersicht)
+           nicht bis ans Ende gescrollt werden müssen, um schließen zu können. -->
+      <div class="modal-head">
+        <h3 id="modalTitle"></h3>
+        <button type="button" id="modalClose" class="modal-x" aria-label="Schließen">✕</button>
+      </div>
       <div id="modalBody"></div>
       <div class="modal-actions">
         <button id="modalCancel" class="btn ghost">Abbrechen</button>
         <button id="modalOk" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== BILD-GROSSANSICHT ===================== -->
+  <div id="photoOverlay" class="photo-overlay" hidden>
+    <div class="photo-box" role="dialog" aria-modal="true">
+      <div class="photo-head">
+        <div id="photoTitle" class="photo-title"></div>
+        <div id="photoSub" class="photo-sub"></div>
+      </div>
+      <img id="photoImg" alt="" />
+      <div class="modal-actions">
+        <button id="photoClose" class="btn ghost">Schließen</button>
+        <button id="photoDelete" class="btn danger">🗑 Bild löschen</button>
       </div>
     </div>
   </div>
@@ -181,7 +294,9 @@
   <script src="js/bautagebuch.js"></script>
   <script src="js/handover.js"></script>
   <script src="js/merge.js"></script>
+  <script src="js/docx.js"></script>
   <script src="js/protokoll.js"></script>
+  <script src="js/behinderung.js"></script>
   <script src="js/vorpruefung.js"></script>
   <script src="js/app.js"></script>
 </body>

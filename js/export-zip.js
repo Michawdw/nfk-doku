@@ -69,6 +69,24 @@ const ExportZip = (() => {
       }
     }
 
+    // --- Verwaiste Bilddoku-Bilder ---
+    // Bilder, deren Position in der aktuellen Struktur nicht mehr existiert (z. B. nach
+    // einem Vorlagenwechsel). Ohne Sonderbehandlung fielen sie stillschweigend aus dem
+    // Export: die Backup-Erinnerung zählte sie, der Export ignorierte sie – „Jetzt sichern"
+    // meldete dann „Noch keine Bilder aufgenommen" und die Warnung ließ sich nie ausräumen.
+    totalPhotos += await addOrphanPhotos(zip, job, enriched, filPrefix, manifest, lines);
+
+    const bilddokuPhotos = totalPhotos;
+
+    // --- Bilder der Baubehinderungsanzeigen ---
+    // Gehören zur lückenlosen Dokumentation, sind aber KEINE Bilddoku-Position. Daher:
+    // eigener Ordner, eigener Manifest-Abschnitt und KEINE Zeile in uebersicht.csv –
+    // sonst erschienen sie in der Übersicht als Position. Wichtig ist auch der eigene
+    // Manifest-Schlüssel: merge.js legt aus manifest.photos fehlende Positionen als
+    // eigene Namen an, was hier eine Phantom-Position „Baubehinderung" erzeugen würde.
+    const behinderungPhotos = await addBehinderungPhotos(zip, job, filPrefix, manifest);
+    totalPhotos += behinderungPhotos;
+
     zip.file('uebersicht.csv', '﻿' + lines.join('\r\n'));
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
 
@@ -81,7 +99,106 @@ const ExportZip = (() => {
     const fname = buildZipName(project);
     await App.shareFile(blob, fname, 'application/zip',
       `Bilddoku ${project.filiale || ''}`.trim());
-    return { totalPhotos, fname };
+    return { totalPhotos, bilddokuPhotos, behinderungPhotos, fname };
+  }
+
+  // Legt Bilddoku-Bilder ab, deren Position es in der aktuellen Struktur nicht mehr gibt,
+  // im Ordner „Ohne Zuordnung/<Ober>/[<Unter>/]". Sie bleiben damit gesichert und
+  // wandern beim Zusammenführen über manifest.photos wieder an ihre ursprüngliche
+  // Position zurück. Liefert die Anzahl der abgelegten Bilder.
+  async function addOrphanPhotos(zip, job, enriched, filPrefix, manifest, lines) {
+    const bekannt = new Set(enriched.map((n) => n.key));
+    const byNode = new Map();
+    for (const p of await DB.getAllPhotos(job.id)) {
+      if (!DB.isBilddokuPhoto(p)) continue;   // Vorprüfung/Behinderung: eigene Wege
+      if (bekannt.has(p.nodeKey)) continue;   // regulär bereits exportiert
+      if (!byNode.has(p.nodeKey)) byNode.set(p.nodeKey, []);
+      byNode.get(p.nodeKey).push(p);
+    }
+    if (!byNode.size) return 0;
+
+    let count = 0;
+    for (const [key, photos] of byNode) {
+      const teile = String(key).split(Structure.SEP);
+      const ober = teile[0] || 'Allgemein';
+      const unter = teile[1] || '';
+      const bildname = teile[2] || key;
+      const parts = ['Ohne Zuordnung', safePart(ober)];
+      if (unter) parts.push(safePart(unter));
+      const folder = parts.join('/');
+      photos.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+
+      lines.push([ober, unter, bildname, '', photos.length, 'nicht mehr in Vorlage']
+        .map(csvCell).join(';'));
+
+      for (const p of photos) {
+        const fname = `${filPrefix}${safePart(bildname)}_${String(p.seq).padStart(2, '0')}.jpg`;
+        const path = `${folder}/${fname}`;
+        zip.file(path, p.blob);
+        manifest.photos.push({
+          srcId: p.srcId || null, nodeKey: key,
+          ober, unter: unter || null, bildname, pflicht: 1, benoetigt: true, verwaist: true,
+          seq: p.seq, createdAt: p.createdAt || null, path,
+        });
+        count++;
+      }
+    }
+    return count;
+  }
+
+  // Legt die Fotos aller Baubehinderungsanzeigen im Ordner „Baubehinderung/<Datum>" ab.
+  // Dateiname wie bei den übrigen Bildern, nur mit „Baubehinderung" als Bildnamen:
+  //   <Filialnr>_Baubehinderung_<NN>.jpg
+  // Mehrere Anzeigen am selben Tag bekommen „(2)", „(3)" … angehängt, damit sich die
+  // Pfade nicht überschreiben. Liefert die Anzahl der abgelegten Bilder.
+  async function addBehinderungPhotos(zip, job, filPrefix, manifest) {
+    const NS = '__behinderung__';
+    const all = await DB.getAllPhotos(job.id);
+    const byNode = new Map();
+    for (const p of all) {
+      if (typeof p.nodeKey !== 'string' || p.nodeKey.indexOf(NS) !== 0) continue;
+      if (!byNode.has(p.nodeKey)) byNode.set(p.nodeKey, []);
+      byNode.get(p.nodeKey).push(p);
+    }
+    if (!byNode.size) return 0;
+
+    // Reihenfolge über die Anzeigen selbst (älteste zuerst), damit die Ordner stabil sind;
+    // Fotos ohne zugehörige Anzeige landen am Ende unter „ohne Zuordnung".
+    const anzeigen = ((job && job.behinderungen) || []).slice()
+      .sort((a, b) => String(a.datum || '').localeCompare(String(b.datum || ''))
+        || (a.erstelltAm || 0) - (b.erstelltAm || 0));
+    const reihenfolge = anzeigen.map((a) => ({ nodeKey: NS + a.id, datum: a.datum || '', id: a.id }));
+    const bekannt = new Set(reihenfolge.map((r) => r.nodeKey));
+    for (const nodeKey of byNode.keys()) {
+      if (!bekannt.has(nodeKey)) reihenfolge.push({ nodeKey, datum: '', id: nodeKey.slice(NS.length) });
+    }
+
+    manifest.behinderung = [];
+    const belegt = new Map(); // Ordnername -> wie oft schon vergeben
+    let count = 0;
+    for (const r of reihenfolge) {
+      const photos = byNode.get(r.nodeKey);
+      if (!photos || !photos.length) continue;
+      photos.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+
+      let label = r.datum || 'ohne Zuordnung';
+      const n = (belegt.get(label) || 0) + 1;
+      belegt.set(label, n);
+      if (n > 1) label += ' (' + n + ')';
+      const folder = 'Baubehinderung/' + safePart(label);
+
+      for (const p of photos) {
+        const fname = `${filPrefix}Baubehinderung_${String(p.seq).padStart(2, '0')}.jpg`;
+        const path = `${folder}/${fname}`;
+        zip.file(path, p.blob);
+        manifest.behinderung.push({
+          srcId: p.srcId || null, anzeigeId: r.id, datum: r.datum || null,
+          caption: p.caption || '', seq: p.seq, createdAt: p.createdAt || null, path,
+        });
+        count++;
+      }
+    }
+    return count;
   }
 
   // Bilddoku_LI<Filialnummer>_<Ort>_Stand_<YYYY_MM_DD>.zip

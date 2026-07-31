@@ -2,7 +2,8 @@
    Alles ist pro Auftrag (jobId) getrennt:
    - jobs:   ein Datensatz je Auftrag (Kopf, Struktur, eigene Namen, gewählte Vorlage,
              priorCounts = übernommene Ist-Anzahl je Position).
-   - photos: Bilder (append-only) mit jobId; Index byJobNode = [jobId, nodeKey].
+   - photos: Bilder mit jobId; Index byJobNode = [jobId, nodeKey]. Neue Bilder werden
+             angehängt; beim Löschen wird die Position neu durchnummeriert (renumberNode).
    - diary2: Bautagebuch-Tage, keyPath [jobId, datum].
    - meta:   kleine Schlüssel/Werte (z. B. currentJobId, Migrationsflag).
    Beim Upgrade von v2 werden vorhandene Einzel-Auftragsdaten in einen Default-Auftrag
@@ -204,14 +205,43 @@ const DB = (() => {
     const s = await store('photos', 'readonly');
     return reqP(s.index('byJob').getAll(IDBKeyRange.only(jobId)));
   }
+  // Gehört das Bild zur Bilddokumentation? Vorprüfung ('__vorpruefung__<pid>') und
+  // Baubehinderungsanzeige ('__behinderung__<id>') legen ihre Fotos unter reservierten
+  // nodeKeys mit führendem '__' ab. Sie sind KEIN Teil des Bilddoku-ZIP und dürfen
+  // deshalb auch nicht in Zählungen einfließen, die sich auf die Sicherung beziehen.
+  function isBilddokuPhoto(rec) {
+    return !(rec && typeof rec.nodeKey === 'string' && rec.nodeKey.indexOf('__') === 0);
+  }
+  // Nur die Bilder der Bilddokumentation eines Auftrags.
+  async function getBilddokuPhotos(jobId) {
+    return (await getAllPhotos(jobId)).filter(isBilddokuPhoto);
+  }
   async function addPhoto(rec) {
-    // rec: { jobId, nodeKey, seq, blob, createdAt, srcId }. Bilddoku: niemals update/delete.
+    // rec: { jobId, nodeKey, seq, blob, createdAt, srcId }. Neue Bilder werden angehängt.
     return reqP((await store('photos', 'readwrite')).add(rec));
   }
-  // Einzelnes Foto anhand seiner id löschen. Bewusst NUR für Vorprüfungs-/Behinderungsfotos
-  // gedacht (nodeKey-Präfix '__vorpruefung__'); die Bilddoku bleibt append-only.
+  // Einzelnes Foto anhand seiner id löschen.
+  // Bei Bilddoku-Positionen IMMER zusammen mit renumberNode() aufrufen (siehe dort),
+  // sonst entstehen doppelte Bildnummern. Vorprüfungsfotos haben keine Nummerierung.
   async function deletePhotoById(id) {
     return reqP((await store('photos', 'readwrite')).delete(id));
+  }
+  // Nummeriert die Bilder einer Position lückenlos neu: prior+1 … prior+n
+  // (Reihenfolge nach Aufnahmezeit, ersatzweise alter Nummer).
+  // Nötig nach jedem Löschen, weil die nächste freie Nummer als prior+Anzahl+1
+  // berechnet wird – ohne Neunummerierung gäbe es sonst zwei Bilder gleicher Nummer.
+  async function renumberNode(jobId, nodeKey, prior) {
+    const photos = await getPhotos(jobId, nodeKey);
+    photos.sort((a, b) => (a.createdAt || a.seq || 0) - (b.createdAt || b.seq || 0));
+    const changed = [];
+    photos.forEach((p, i) => {
+      const seq = (prior || 0) + i + 1;
+      if (p.seq !== seq) { p.seq = seq; changed.push(p); }
+    });
+    if (!changed.length) return 0;
+    const s = await store('photos', 'readwrite');
+    for (const p of changed) await reqP(s.put(p));
+    return changed.length;
   }
   // Aktualisiert einzelne Felder eines Fotos (z. B. caption) – nur für Vorprüfungsfotos.
   async function updatePhoto(rec) {
@@ -246,7 +276,8 @@ const DB = (() => {
     getMeta, setMeta, getDeviceId,
     listJobs, getJob, saveJob, createJob, deleteJob, newJob,
     getCurrentJobId, setCurrentJobId,
-    countPhotos, getPhotos, getAllPhotos, addPhoto, deletePhotoById, updatePhoto, getPhotoSrcIds,
+    countPhotos, getPhotos, getAllPhotos, getBilddokuPhotos, isBilddokuPhoto,
+    addPhoto, deletePhotoById, renumberNode, updatePhoto, getPhotoSrcIds,
     getDiary, saveDiary, listDiary, deleteDiary,
   };
 })();
