@@ -1,11 +1,12 @@
 /* Service Worker – Precache der App-Shell für vollständigen Offline-Betrieb.
    Cache-Version bei jeder Änderung der Asset-Liste erhöhen. */
-const CACHE = 'nfk-doku-v35';
+const CACHE = 'nfk-doku-v40';
 
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
+  './js/datum.js',
   './js/db.js',
   './js/app.js',
   './js/template.js',
@@ -87,7 +88,9 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           if (res && res.status === 200) {
             const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put('./assets/templates.xlsx', copy));
+            // waitUntil: ohne das kann der Service Worker beendet werden, bevor der
+            // Cache-Eintrag geschrieben ist – die Vorlage fehlte dann offline.
+            event.waitUntil(caches.open(CACHE).then((c) => c.put('./assets/templates.xlsx', copy)));
           }
           return res;
         })
@@ -104,7 +107,7 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           if (res && res.status === 200 && res.type === 'basic') {
             const copy = res.clone();
-            caches.open(CACHE).then((cache) => cache.put(req, copy));
+            event.waitUntil(caches.open(CACHE).then((cache) => cache.put(req, copy)));
           }
           return res;
         })

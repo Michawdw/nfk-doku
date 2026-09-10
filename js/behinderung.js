@@ -58,7 +58,7 @@ const Behinderung = (() => {
   let cameraInput = null, galleryInput = null;
 
   const nodeKeyFor = (id) => NS + id;
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => Datum.heute();
 
   function list(job) {
     if (!job.behinderungen) job.behinderungen = [];
@@ -149,7 +149,7 @@ const Behinderung = (() => {
         });
       } catch (err) {
         console.error(err);
-        App.toast('Foto konnte nicht hinzugefügt werden: ' + (err.message || err));
+        App.toast('Foto konnte nicht hinzugefügt werden: ' + App.fehlerText(err), 5000);
       }
     }
     await renderThumbs();

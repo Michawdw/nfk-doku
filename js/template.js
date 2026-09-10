@@ -122,6 +122,10 @@ const Structure = (() => {
   }
 
   const EXTERNAL_LABEL = '(Eigener Import)';
+  // Struktur kam aus einer Übergabe-Datei/Bilddoku-ZIP, die keinen Vorlagennamen
+  // mitliefert (alte ZIPs kennen nur die uebersicht.csv). Ohne eigenes Label stünde im
+  // Dropdown weiter die vorherige Vorlage – der Baum zeigte dann etwas anderes als der Name.
+  const HANDOVER_LABEL = '(Aus Übergabe)';
 
   // Legt einen eigenen Namen/Bereich im aktuellen Auftrag an (bleibt bei Vorlagenwechsel erhalten).
   async function addCustomName(node) {
@@ -202,6 +206,6 @@ const Structure = (() => {
 
   return {
     SEP, makeKey, unterKey, isSkipped, parseWorkbook, importFile, addCustomName, getMerged, groupForDisplay,
-    listTemplates, importFromCatalog, getSelectedTemplate, EXTERNAL_LABEL, loadExcelJS,
+    listTemplates, importFromCatalog, getSelectedTemplate, EXTERNAL_LABEL, HANDOVER_LABEL, loadExcelJS,
   };
 })();
