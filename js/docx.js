@@ -122,6 +122,66 @@ const Docx = (() => {
     `<w:p>${pPr(null, '<w:spacing w:after="0"/>')}<w:r>${runText(str)}</w:r></w:p>`;
   const pPageBreak = () => '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
 
+  // Absatz mit frei wählbarer Schrift: { bold, italic, color:'RRGGBB', sz (half-points),
+  // align, after (Abstand danach in Twips) }. Grundlage für die gestalteten Berichte.
+  function pStyled(str, o) {
+    const s = o || {};
+    const rPr = (s.bold ? '<w:b/>' : '') + (s.italic ? '<w:i/>' : '')
+      + (s.color ? `<w:color w:val="${s.color}"/>` : '') + (s.sz ? `<w:sz w:val="${s.sz}"/>` : '');
+    const extra = (s.after != null ? `<w:spacing w:after="${s.after}"/>` : '')
+      + (s.keepNext ? '<w:keepNext/>' : '');
+    return `<w:p>${pPr(s.align, extra)}<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}${runText(str)}</w:r></w:p>`;
+  }
+
+  // Farbiger Abschnitts-Balken über die ganze Textbreite (Absatzschattierung), weiße
+  // fette Schrift. keepNext hält ihn mit dem folgenden Inhalt auf einer Seite.
+  const pBar = (str, fill) =>
+    `<w:p><w:pPr><w:keepNext/><w:shd w:val="clear" w:color="auto" w:fill="${fill || '1F4E78'}"/>` +
+    '<w:spacing w:before="280" w:after="120"/></w:pPr>' +
+    `<w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/><w:sz w:val="26"/></w:rPr>${runText(' ' + str)}</w:r></w:p>`;
+
+  // Setzt <w:keepNext/> in jeden Absatz eines XML-Stücks (ohneLetzten: den letzten Absatz
+  // auslassen). Vorhandene keepNext werden vorher entfernt, damit keiner doppelt steht.
+  // Einfügen direkt am Anfang von w:pPr ist schema-konform (keepNext folgt nur pStyle).
+  function keepNextXml(xml, ohneLetzten) {
+    const sauber = String(xml).replace(/<w:keepNext\/>/g, '');
+    const gesamt = (sauber.match(/<w:p\/>|<w:p>/g) || []).length;
+    let n = 0;
+    return sauber.replace(/<w:p\/>|<w:p>(<w:pPr>)?/g, (m, ppr) => {
+      n++;
+      if (ohneLetzten && n === gesamt) return m;
+      if (m === '<w:p/>') return '<w:p><w:pPr><w:keepNext/></w:pPr></w:p>';
+      return ppr ? '<w:p><w:pPr><w:keepNext/>' : '<w:p><w:pPr><w:keepNext/></w:pPr>';
+    });
+  }
+
+  // Tabelle mit dünnem grauen Gitter. rows: [{ header?, cells: [{ text | xml, fill, bold,
+  // color, sz, align }] }], widths: Spaltenbreiten in Twips (Summe = Textbreite 9638).
+  // Kopfzeilen wiederholen sich auf jeder Seite (tblHeader).
+  function table(rows, widths) {
+    const total = widths.reduce((a, b) => a + b, 0);
+    const line = (s) => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="BFC5CC"/>`;
+    const borders = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(line).join('');
+    const cellPara = (c) => {
+      const rPr = (c.bold ? '<w:b/>' : '') + (c.color ? `<w:color w:val="${c.color}"/>` : '')
+        + (c.sz ? `<w:sz w:val="${c.sz}"/>` : '');
+      return `<w:p>${pPr(c.align, '<w:spacing w:before="40" w:after="40"/>')}` +
+        `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}${runText(c.text)}</w:r></w:p>`;
+    };
+    const tr = (r) => '<w:tr>' + (r.header ? '<w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>' : '<w:trPr><w:cantSplit/></w:trPr>') +
+      r.cells.map((c, i) =>
+        `<w:tc><w:tcPr><w:tcW w:w="${widths[i]}" w:type="dxa"/>` +
+        (c.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${c.fill}"/>` : '') +
+        '<w:vAlign w:val="center"/></w:tcPr>' + (c.xml || cellPara(c)) + '</w:tc>').join('') + '</w:tr>';
+    return '<w:tbl><w:tblPr>' +
+      `<w:tblW w:w="${total}" w:type="dxa"/><w:tblLayout w:type="fixed"/>` +
+      `<w:tblBorders>${borders}</w:tblBorders>` +
+      '<w:tblCellMar><w:left w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar>' +
+      '</w:tblPr>' +
+      `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>` +
+      rows.map(tr).join('') + '</w:tbl>';
+  }
+
   // Ein eingebettetes Bild als eigener Absatz.
   function drawingParagraph(rid, seq, emu, align) {
     return `<w:p>${pPr(align)}<w:r><w:drawing>` +
@@ -283,6 +343,46 @@ const Docx = (() => {
         return api;
       },
 
+      // Zusammenhalten auf einer Seite: mark() merkt sich die aktuelle Position im Dokument,
+      // keepTogether(von, bis) setzt auf allen Absätzen dazwischen „Absatz mit nächstem
+      // zusammenhalten" (auch in Tabellenzellen – so hält Word auch Tabellenzeilen
+      // zusammen). Der letzte Absatz bleibt frei, sonst hinge der Block am nächsten.
+      // Passt der Block nicht mehr auf die Seite, beginnt Word ihn auf einer neuen.
+      mark() { return body.length; },
+      keepTogether(von, bis) {
+        const ende = bis == null ? body.length : bis;
+        for (let i = von; i < ende; i++) body[i] = keepNextXml(body[i], i === ende - 1);
+        return api;
+      },
+
+      // Fotos zwei pro Zeile, je mit Bildunterschrift darunter – rahmenlose Tabelle.
+      // items: [{ blob, caption }]. Hochkantfotos werden in der Höhe begrenzt, damit eine
+      // Zeile nicht die halbe Seite füllt.
+      async photoGrid(items) {
+        const list = (items || []).filter((x) => x && x.blob);
+        if (!list.length) return api;
+        const COL = Math.floor(TBL_W / 2);
+        const imgOpts = { ext: 'jpeg', maxWidthEmu: 8 * EMU_PER_CM, maxHeightEmu: 6.5 * EMU_PER_CM, align: 'center' };
+        const cell = async (it) => {
+          if (!it) return '<w:tc><w:tcPr><w:tcW w:w="' + COL + '" w:type="dxa"/></w:tcPr><w:p/></w:tc>';
+          const img = await api.imageXml(it.blob, imgOpts);
+          const cap = (it.caption && String(it.caption).trim())
+            ? pStyled(it.caption, { sz: 18, color: '5A6672', align: 'center', after: 60 }) : '<w:p/>';
+          return `<w:tc><w:tcPr><w:tcW w:w="${COL}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>${img}${cap}</w:tc>`;
+        };
+        let rows = '';
+        for (let i = 0; i < list.length; i += 2) {
+          rows += '<w:tr><w:trPr><w:cantSplit/></w:trPr>' + await cell(list[i]) + await cell(list[i + 1]) + '</w:tr>';
+        }
+        body.push('<w:tbl><w:tblPr>' +
+          `<w:tblW w:w="${COL * 2}" w:type="dxa"/><w:tblLayout w:type="fixed"/>` +
+          `<w:tblBorders>${NO_BORDER}</w:tblBorders></w:tblPr>` +
+          `<w:tblGrid><w:gridCol w:w="${COL}"/><w:gridCol w:w="${COL}"/></w:tblGrid>` +
+          rows + '</w:tbl>');
+        body.push(pEmpty());   // Word verlangt nach einer Tabelle einen Absatz
+        return api;
+      },
+
       async logo(opts) {
         try {
           const xml = await api.logoXml(opts);
@@ -355,5 +455,6 @@ const Docx = (() => {
     MIME, EMU_PER_CM, MAX_W_EMU,
     create, escapeXml, escapeAttr, xmlSauber, fmtDate, buildFileName,
     pText, pBold, pEmpty, pHead, pTitle, pRight, pSmall, pTight, pPageBreak,
+    pStyled, pBar, table, TBL_W,
   };
 })();
