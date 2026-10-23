@@ -1,6 +1,6 @@
 /* Service Worker – Precache der App-Shell für vollständigen Offline-Betrieb.
    Cache-Version bei jeder Änderung der Asset-Liste erhöhen. */
-const CACHE = 'nfk-doku-v72';
+const CACHE = 'nfk-doku-v79';
 
 const ASSETS = [
   './',
@@ -22,6 +22,8 @@ const ASSETS = [
   './js/vorpruefung.js',
   './js/wochenbericht.js',
   './js/namen.js',
+  './js/textregeln.js',
+  './js/textkorrektur.js',
   './lib/jszip.min.js',
   './lib/exceljs.min.js',
   './manifest.webmanifest',
@@ -30,6 +32,8 @@ const ASSETS = [
   './assets/technikerliste.xlsx',
   './assets/icon-192.png',
   './assets/icon-512.png',
+  './assets/icon-maskable-512.png',
+  './assets/apple-touch-icon.png',
   './assets/logo.png'
 ];
 

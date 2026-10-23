@@ -100,17 +100,20 @@ const App = (() => {
   // Lange Inhalte (Ordner mit vielen Bildern) werden nur über den sichtbaren Teil animiert:
   // Was unterhalb des Bildschirmrands liegt, sieht ohnehin niemand – so bleibt die
   // Animation auch auf alten Handys kurz und ruckelfrei, egal wie lang der Ordner ist.
-  function sichtbareHoehe(el, h) {
-    const rest = window.innerHeight - el.getBoundingClientRect().top + 40;
+  // obenBei: Bildschirmhöhe, an der der Inhalt nach einem gleichzeitigen Scrollen beginnt
+  // (sonst die aktuelle Lage) – dann wird über den am Ende sichtbaren Teil animiert.
+  function sichtbareHoehe(el, h, obenBei) {
+    const top = obenBei != null ? obenBei : el.getBoundingClientRect().top;
+    const rest = window.innerHeight - top + 40;
     return Math.min(h, Math.max(120, rest));
   }
 
   // Aufklappen: Höhe 0 → natürliche Höhe. Das Element steht bereits fertig im DOM.
-  function animOpen(el) {
+  function animOpen(el, obenBei) {
     if (ohneAnimation(el)) return;
     const h = el.offsetHeight;
     if (!h) return;
-    const ziel = sichtbareHoehe(el, h);
+    const ziel = sichtbareHoehe(el, h, obenBei);
     const cs = getComputedStyle(el);
     el.style.overflow = 'hidden';
     const a = el.animate([
@@ -1092,13 +1095,58 @@ const App = (() => {
       const body = kopf && kopf.nextElementSibling;
       if (body && body.classList.contains('tree-body')) {
         kopf.classList.add('zu');            // Pfeil dreht schon mit zurück
-        await animClose(body);
+        // Klappt ein langer Ordner OBERHALB des angetippten zu, würde die Seite unter dem
+        // Finger wegrutschen und der angetippte Ordner nach oben aus dem Bild laufen.
+        // Deshalb hält die Ansicht ihn während der Animation Bild für Bild an seiner Stelle.
+        const halt = halteKopf(treeKopf(anker));
+        // Die Animation startet mit der sichtbaren Höhe statt der vollen – der Rest eines langen
+        // Ordners fällt sofort weg. Diese Starthöhe schon vorher setzen und den Sprung im selben
+        // Moment ausgleichen (der Ordner wird danach ohnehin neu gezeichnet).
+        if (!ohneAnimation(body)) {
+          body.style.height = sichtbareHoehe(body, body.offsetHeight) + 'px';
+          body.style.overflow = 'hidden';
+          halt.jetzt();
+        }
+        const zu = animClose(body);
+        await zu;
+        halt.jetzt();
+        halt.stop();
       }
       if (umschalten()) treeAufgeklappt = anker;
       await renderTree(anker);
     } finally {
       treeKlappt = false;
     }
+  }
+
+  // Hält eine Kopfzeile während einer Animation auf derselben Bildschirmhöhe (scrollt Bild
+  // für Bild mit). jetzt() gleicht sofort aus, stop() beendet das Mitscrollen.
+  function halteKopf(el) {
+    if (!el) return { jetzt() {}, stop() {} };
+    const soll = el.getBoundingClientRect().top;
+    let laeuft = true;
+    const jetzt = () => {
+      if (!el.isConnected) return;
+      const diff = el.getBoundingClientRect().top - soll;
+      if (Math.abs(diff) >= 1) window.scrollBy(0, diff);
+    };
+    const schritt = () => {
+      if (!laeuft) return;
+      jetzt();
+      requestAnimationFrame(schritt);
+    };
+    requestAnimationFrame(schritt);
+    return { jetzt, stop() { laeuft = false; } };
+  }
+
+  // Frisch aufgeklappter Ordner: Kopfzeile weich an den oberen Rand (unter die Kopfleiste)
+  // schieben, damit sein Inhalt darunter vollständig im Blick ist. Liefert die Zielhöhe.
+  function kopfNachOben(kopf) {
+    const leiste = $('.topbar');
+    const oben = (leiste ? leiste.getBoundingClientRect().bottom : 0) + 8;
+    const ziel = Math.max(0, window.scrollY + kopf.getBoundingClientRect().top - oben);
+    window.scrollTo({ top: ziel, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+    return oben + kopf.offsetHeight;
   }
 
   async function renderTree(anker) {
@@ -1262,7 +1310,7 @@ const App = (() => {
       const kopf = treeKopf(treeAufgeklappt);
       treeAufgeklappt = null;
       const body = kopf && kopf.nextElementSibling;
-      if (body && body.classList.contains('tree-body')) animOpen(body);
+      if (body && body.classList.contains('tree-body')) animOpen(body, kopfNachOben(kopf));
       dreheChev(kopf);
     }
   }
@@ -1614,6 +1662,93 @@ const App = (() => {
       f.ortDatum.value = defaultOrtDatum(datum);
       renderDiaryRows(techs.map((t) => ({ name: t })));
     }
+    korrekturVorher = null;
+    $('#diaryKorrUndo').hidden = true;
+  }
+
+  // ---- Texte korrigieren (regelbasiert, js/textkorrektur.js) ----
+  // Zeigt je Textfeld Original und Vorschlag mit markierten Änderungen; der Techniker
+  // wählt, was übernommen wird. Die Originale bleiben bis zum Tageswechsel für
+  // „Korrektur rückgängig" erhalten.
+  const KORR_FELDER = [
+    ['taetigkeiten', 'Beschreibung der Tätigkeiten'],
+    ['behinderungen', 'Behinderungen'],
+    ['vorkommnisse', 'Besondere Vorkommnisse'],
+  ];
+  let korrekturVorher = null;
+
+  // Wort-Diff (LCS über Wörter und Leerraum): zeigt den neuen Text, geänderte/neue Wörter
+  // hervorgehoben. Gelöschte Wörter werden nicht eingeblendet – auf dem Handy wäre der
+  // Text sonst kaum lesbar; das Original ist im Dialog aufklappbar.
+  function wortDiffHtml(alt, neu) {
+    const a = alt.split(/(\s+)/).filter((t) => t !== '');
+    const b = neu.split(/(\s+)/).filter((t) => t !== '');
+    const n = a.length, m = b.length;
+    const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+      }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    const leer = (t) => /^\s+$/.test(t);
+    while (i < n || j < m) {
+      if (i < n && j < m && a[i] === b[j]) { out.push(escHtml(b[j])); i++; j++; }
+      else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) {
+        out.push(leer(b[j]) ? escHtml(b[j]) : `<ins>${escHtml(b[j])}</ins>`); j++;
+      } else {
+        i++;
+      }
+    }
+    return out.join('');
+  }
+
+  function openTextkorrektur() {
+    const f = $('#diaryForm');
+    const vorschlaege = KORR_FELDER.map(([name, titel]) => {
+      const alt = f[name].value;
+      const erg = Textkorrektur.korrigiere(alt, name);
+      return { name, titel, alt, neu: erg.text, hinweise: erg.hinweise, geaendert: alt.trim() !== '' && erg.text !== alt };
+    });
+    if (vorschlaege.every((v) => !v.alt.trim())) {
+      toast('Noch kein Text eingetragen.');
+      return;
+    }
+    if (!vorschlaege.some((v) => v.geaendert)) {
+      toast('Keine Korrektur nötig – die Texte entsprechen bereits den Regeln.');
+      return;
+    }
+    const html = '<p class="tk-info">Vorschlag nach den hinterlegten Schreibregeln (ohne KI). '
+      + '<ins>Markiert</ins> = geändert. Bitte inhaltlich gegenlesen – '
+      + 'nach dem Übernehmen kann im Feld weiter geändert werden.</p>'
+      + vorschlaege.filter((v) => v.alt.trim()).map((v) => `
+        <div class="tk-feld">
+          <label class="tk-wahl"><input type="checkbox" name="${v.name}" ${v.geaendert ? 'checked' : 'disabled'} />
+            ${escHtml(v.titel)}${v.geaendert ? '' : ' – keine Änderung'}</label>
+          ${v.geaendert ? `<div class="tk-diff">${wortDiffHtml(v.alt, v.neu)}</div>
+            <details class="tk-orig"><summary>Original anzeigen</summary><div>${escHtml(v.alt)}</div></details>` : ''}
+          ${v.hinweise.length ? `<ul class="tk-hinweise">${v.hinweise.map((h) => `<li>${escHtml(h)}</li>`).join('')}</ul>` : ''}
+        </div>`).join('');
+    openConfirm('Texte korrigieren', html, 'Auswahl übernehmen', false, 'Verwerfen').then((ok) => {
+      if (!ok) return;
+      // Häkchen wurden vor dem Schließen gesetzt – Body ist noch im DOM
+      const gewaehlt = vorschlaege.filter((v) => v.geaendert && $(`#modalBody input[name="${v.name}"]`)?.checked);
+      if (!gewaehlt.length) return;
+      korrekturVorher = {};
+      gewaehlt.forEach((v) => { korrekturVorher[v.name] = v.alt; f[v.name].value = v.neu; });
+      $('#diaryKorrUndo').hidden = false;
+      toast('Korrektur übernommen – bitte gegenlesen und Tag speichern.');
+    });
+  }
+
+  function undoTextkorrektur() {
+    if (!korrekturVorher) return;
+    const f = $('#diaryForm');
+    Object.entries(korrekturVorher).forEach(([name, alt]) => { f[name].value = alt; });
+    korrekturVorher = null;
+    $('#diaryKorrUndo').hidden = true;
+    toast('Originaltexte wiederhergestellt.');
   }
 
   function defaultOrtDatum(datum) {
@@ -2004,6 +2139,8 @@ const App = (() => {
     // die Übergabe des Kollegen heran.
     $('#startImport').addEventListener('change', importAnyFile);
     $('#diarySaveBtn').onclick = saveDiary;
+    $('#diaryKorrBtn').onclick = openTextkorrektur;
+    $('#diaryKorrUndo').onclick = undoTextkorrektur;
     $('#diaryExportBtn').onclick = busy(exportDiary);
     // Schatten unter der Kopfleiste, sobald darunter gescrollt wird.
     const topbar = $('.topbar');
@@ -2022,7 +2159,7 @@ const App = (() => {
   // Zeigt unten auf der Startseite die installierte App-Version an. Autoritativ ist
   // die Cache-Version des laufenden Service Workers (per Nachricht abgefragt); solange
   // die noch nicht geantwortet hat, dient APP_VERSION als Sofort-Anzeige/Fallback.
-  const APP_VERSION = 'v72'; // Bei jeder App-Änderung zusammen mit CACHE in sw.js erhöhen.
+  const APP_VERSION = 'v79'; // Bei jeder App-Änderung zusammen mit CACHE in sw.js erhöhen.
   function renderAppVersion(v) {
     const el = $('#appVersion');
     if (!el) return;
@@ -2055,6 +2192,65 @@ const App = (() => {
     frage();
   }
 
+  // ---- Warnung: App läuft nicht vom Startbildschirm ----
+  // Auf dem iPhone löscht iOS die Daten einer nur in Safari geöffneten Seite nach etwa einer
+  // Woche ohne Nutzung – mit allen Fotos und Aufträgen. Für installierte Apps gilt das nicht.
+  // Außerdem hat die installierte App eigene Daten, getrennt vom Browser. Deshalb auf Handys
+  // deutlich darauf hinweisen (übernommen aus der Auftragsdoku-App, dort im Einsatz bewährt).
+  function laeuftAlsApp() {
+    // display-mode deckt Android/Chrome ab, navigator.standalone das iPhone.
+    try { if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true; } catch (e) { /* egal */ }
+    return navigator.standalone === true;
+  }
+  function istApple() {
+    // iPadOS ab 13 meldet sich als Mac – erkennbar daran, dass es Touch kann.
+    return /iP(hone|ad|od)/.test(navigator.userAgent)
+      || (/Mac/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  }
+  const INSTALL_TEXT = {
+    ios: '<b>Die App läuft gerade als Safari-Seite.</b> Fotos und Aufträge liegen nur auf diesem '
+      + 'Gerät – iOS löscht sie nach etwa einer Woche ohne Nutzung. Jetzt eine Sicherung (ZIP) machen. '
+      + 'Danach: Teilen-Symbol antippen → „Zum Home-Bildschirm“ und die App künftig nur noch von dort '
+      + 'starten. Achtung: Die installierte App hat eigene Daten – Aufträge über „Auftrag übernehmen“ '
+      + 'aus der Sicherung einlesen.',
+    android: '<b>Die App läuft gerade als Browser-Seite.</b> Fotos und Aufträge liegen nur in diesem '
+      + 'Browser. Jetzt eine Sicherung (ZIP) machen. Danach: Browser-Menü (⋮) → „App installieren“ '
+      + 'bzw. „Zum Startbildschirm hinzufügen“ und die App künftig nur noch vom Startbildschirm starten.',
+  };
+  function pruefeInstallation() {
+    const box = $('#installHinweis');
+    if (!box) return;
+    // Nur auf Handys warnen – am PC ist das Arbeiten im Browser gewollt.
+    const mobil = istApple() || /Android/.test(navigator.userAgent);
+    // Weggeklickt gilt bis morgen, nicht für immer: Wer wochenlang im Browser arbeitet, soll
+    // regelmäßig erinnert werden.
+    let weggeklickt = false;
+    try { weggeklickt = Date.now() < +(localStorage.getItem('installHinweisZuBis') || 0); } catch (e) { /* egal */ }
+    if (!mobil || laeuftAlsApp() || weggeklickt) { box.hidden = true; return; }
+    $('#installText').innerHTML = istApple() ? INSTALL_TEXT.ios : INSTALL_TEXT.android;
+    box.hidden = false;
+  }
+  function installHinweisSchliessen() {
+    try {
+      const morgen = new Date();
+      morgen.setHours(24, 0, 0, 0);
+      localStorage.setItem('installHinweisZuBis', String(morgen.getTime()));
+    } catch (e) { /* egal */ }
+    $('#installHinweis').hidden = true;
+  }
+
+  // Eine App, die nur aus dem Hintergrund geholt wird, fragt nie nach einer neuen sw.js –
+  // auf dem iPhone oft tagelang, weil iOS die App nur einfriert. Deshalb beim Zurückholen
+  // selbst nachsehen, höchstens alle 10 Minuten.
+  function pruefeUpdatesBeimZurueckholen(reg) {
+    let zuletzt = Date.now();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || Date.now() - zuletzt < 10 * 60 * 1000) return;
+      zuletzt = Date.now();
+      reg.update().catch(() => {});
+    });
+  }
+
   async function init() {
     // Robust starten: UI bindet sich auch dann, wenn die Daten-Initialisierung
     // (z. B. IndexedDB) auf einem Gerät klemmt – die App darf nie hängenbleiben.
@@ -2066,6 +2262,9 @@ const App = (() => {
       Wochenbericht.init();
       updateNetDot();
       initAppVersion();
+      $('#installZu').onclick = installHinweisSchliessen;
+      pruefeInstallation();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) pruefeInstallation(); });
       window.addEventListener('online', updateNetDot);
       window.addEventListener('offline', updateNetDot);
       show('view-start');
@@ -2084,7 +2283,9 @@ const App = (() => {
       if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
     } catch (e) { /* best effort */ }
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW-Registrierung fehlgeschlagen', e));
+      navigator.serviceWorker.register('sw.js')
+        .then(pruefeUpdatesBeimZurueckholen)
+        .catch((e) => console.warn('SW-Registrierung fehlgeschlagen', e));
     }
   }
 
