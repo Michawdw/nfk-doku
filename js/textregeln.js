@@ -109,6 +109,11 @@ const TEXTREGELN = {
     'thin client bo': 'Thin Client BO',
     'lbox': 'L-Box', 'l-box': 'L-Box',
     'lili': 'LILI', 'lily': 'LILI', 'lilly': 'LILI',
+    // Räume klein geschrieben („im serverraum", „im büro")
+    'serverraum': 'Serverraum', 'büro': 'Büro', 'kassenbüro': 'Kassenbüro', 'küche': 'Küche',
+    'aktenraum': 'Aktenraum', 'besprechungsraum': 'Besprechungsraum', 'technikraum': 'Technikraum',
+    'sozialraum': 'Sozialraum', 'technikebene': 'Technikebene', 'kleinverteiler': 'Kleinverteiler',
+    'headsetkanal': 'Headsetkanal', 'lager': 'Lager', 'umkleide': 'Umkleide',
     'wago': 'WAGO', 'mde geräte': 'MDE-Geräte', 'owa decken': 'OWA-Decken', 'owa-decken': 'OWA-Decken',
     'xweb': 'XWEB', 'x-web': 'XWEB',
     'pze': 'PZE', 'hga': 'HGA', 'cctv': 'CCTV', 'kwlan': 'KWLAN', 'kvm': 'KVM', 'mats': 'MAT', 'mat': 'MAT',
@@ -121,6 +126,9 @@ const TEXTREGELN = {
     'verkaufsraum': 'Verkaufsbereich', 'verkauf': 'Verkaufsbereich',
     'perso': 'Personalraum',
     'bilddoku': 'Fotodokumentation', 'fotodoku': 'Fotodokumentation',
+    // Hauptwörter, die oft klein getippt werden
+    'leiter': 'Leiter', 'kabelweg': 'Kabelweg', 'kabelwegs': 'Kabelwegs', 'kabelweges': 'Kabelweges',
+    'kabelwege': 'Kabelwege', 'leerpanels': 'Leerpanels', 'erdungsfahnen': 'Erdungsfahnen',
   },
 
   // ---- 3. Regex-Ersetzungen nach den Begriffen (Reihenfolge ist wichtig) ----
@@ -137,12 +145,24 @@ const TEXTREGELN = {
     // (sonst entstünde beim zweiten Korrigieren „Access Points (AP) (AP)")
     ['(?<![\\p{L}])Access Points(?!\\s*\\(AP\\))', 'Access Points (AP)'],
     ['(?<![\\p{L}(])KV(?![\\p{L})])', 'Kleinverteiler (KV)'],
+    // „vocovo 3und ,besprechung" -> „VoCoVo 3, Besprechungsraum": angeklebtes „und" lösen,
+    // „und" direkt vor einem Komma entfällt
+    ['(\\d)(und|u\\.)(?=[\\s,]|$)', '$1 und'],
+    ['\\s+und\\s*,\\s*', ', '],
     // „I.C.im" -> „I.C. im" (sonst entstünde „I.C..im")
     ['I\\.C\\.\\.?(?=\\p{L})', 'I.C. '],
     // „in denn Serverraum" -> „in den Serverraum"
     ['(?<![\\p{L}])(in|für|auf|an|über) denn (?=\\p{Lu})', '$1 den '],
     // „IC1", „IC 2" -> „I.C. 1"
     ['(?<![\\p{L}.])IC\\s*(?=\\d)', 'I.C. '],
+    // „NWS in den Serverraum …" am Zeilenanfang ausschreiben (nicht „NWS 1")
+    ['^NWS(?=\\s+(?!\\d))', 'Netzwerkschränke (NWS)'],
+    // „in den Serverraum gebracht" -> „in den Serverraum eingebracht"
+    ['((?<![\\p{L}])in (?:den|die|das) [\\p{L}-]+) gebracht(?![\\p{L}])', '$1 eingebracht'],
+    // „I.C. Brücken" -> „I.C.-Brücken" (zusammengesetztes Wort)
+    ['I\\.C\\.\\s+(?=Brücke)', 'I.C.-'],
+    // „(die mit der Leiter möglich waren)" -> „(soweit mit der Leiter erreichbar)"
+    ['\\(\\s*die\\s+mit\\s+der\\s+Leiter\\s+(?:möglich|erreichbar)\\s+waren\\s*\\)', '(soweit mit der Leiter erreichbar)'],
     // „Besprechung 1+2" ist der Raum, „Besprechung mit …" nicht
     ['(?<![\\p{L}])Besprechung(?=\\s*\\d|\\s*[,.)]|\\s*$)', 'Besprechungsraum'],
     // AP mit Nummer: „AP10", „Ap 10" -> „AP 10"
@@ -165,6 +185,15 @@ const TEXTREGELN = {
     'verlegen': 'verlegt', 'endverlegen': 'endverlegt', 'umverlegen': 'umverlegt', 'ablängen': 'abgelängt',
     'beschriften': 'beschriftet', 'reinigen': 'gereinigt', 'säubern': 'gesäubert', 'stellen': 'gestellt',
     'aufstellen': 'aufgestellt', 'einführen': 'eingeführt', 'sortieren': 'sortiert', 'prüfen': 'geprüft',
+    'ausrichten': 'ausgerichtet', 'einbringen': 'eingebracht',
+  },
+
+  // Kurze Zusätze hinter „+", die keine eigene Tätigkeit nennen („Ablängen Transferkabel +
+  // einseitig Module") -> „Ablängen der Transferkabel durchgeführt sowie einseitig Module montiert."
+  zusatzTaetigkeiten: {
+    'einseitig module': 'einseitig Module montiert', 'module einseitig': 'einseitig Module montiert',
+    'beidseitig module': 'beidseitig Module montiert', 'module beidseitig': 'beidseitig Module montiert',
+    'module': 'Module montiert',
   },
 
   // Wörter, an die eine Nummer ohne Leerzeichen angehängt sein kann („Kassen1-5").
@@ -251,7 +280,7 @@ const TEXTREGELN = {
     'Sortieren', 'Einführen', 'Auflegen', 'Aufteilen', 'Abschellen', 'Stellen', 'Vorbereitung',
     'Kontrolle', 'Reinigung', 'Zurücksetzen', 'Versuch', 'Austausch', 'Tausch', 'Prüfung', 'Beschriftung',
     'Baustellenbegehung', 'Beginn', 'Konfiguration', 'Verbinden', 'Bereinigung', 'Patchen', 'Fehlersuche',
-    'Querungen'],
+    'Querungen', 'Hereinbringen', 'Reinbringen', 'Einbringen'],
   // Abweichende Ausgabe für ein Hauptwort („Patchen der NWS" -> „Patchung der …")
   hauptwortAlias: { 'patchen': 'Patchung' },
   // Kurzer Partizip-Stil (Stil der neueren Bautagebücher, mit Michael abgestimmt):
@@ -265,6 +294,7 @@ const TEXTREGELN = {
     'annahme': 'entgegengenommen', 'sortieren': 'sortiert', 'einführen': 'eingeführt', 'auflegen': 'aufgelegt',
     'aufteilen': 'aufgeteilt', 'abschellen': 'abgeschellt', 'stellen': 'aufgestellt', 'reinigung': 'gereinigt',
     'austausch': 'ausgetauscht', 'tausch': 'getauscht', 'kontrolle': 'kontrolliert', 'vorbereitung': 'vorbereitet',
+    'hereinbringen': 'hereingebracht', 'reinbringen': 'hereingebracht', 'einbringen': 'eingebracht',
   },
   // Mehrere „AP n" in einer Liste -> „Access Points (AP) 1, 2 und 4"; erste Einzelnennung im
   // Feld -> „Access Point (AP) 12".
@@ -312,21 +342,24 @@ const TEXTREGELN = {
 
   // ---- 8. AVL (nur Feld Behinderungen) ----
   avl: {
+    // Gruppe 1 = Techniker, Gruppe 2 = Stunden/Minuten, Gruppe 3 = optionaler Zeitraum
+    // („für die gesamte Woche", „für KW 46"), der in der AVL-Zeile erhalten bleibt.
+    // Komma nach „Techniker" erlaubt: „2 Techniker, je 120 Stunden".
     muster: [
       // „3 Techniker 8h", „3 Mann a 2,5 Stunden", „2 Man a 2 Stunden", „1 Techniker 1 Stunde"
-      '(\\d+)\\s*(?:Techniker|Mann|Man|MA|Mitarbeiter|Personen|Person)\\s*(?:à|á|a|je|jeweils|x|mit|für)?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:h|Std\\.?|Stunden|Stunde)(?![\\p{L}])',
+      '(\\d+)\\s*(?:Techniker|Mann|Man|MA|Mitarbeiter|Personen|Person)\\s*,?\\s*(?:à|á|a|je|jeweils|x|mit|für)?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:h|Std\\.?|Stunden|Stunde)(?![\\p{L}])(?:\\s+((?:für|in|während)\\s+(?:die\\s+|der\\s+|den\\s+)?(?:gesamte[nr]?\\s+|ganze[nr]?\\s+|komplette[nr]?\\s+)?(?:Woche|KW\\s*\\d+|Tag)))?',
       // „1x1,5h", „1x0,25h"
-      '(\\d+)\\s*[x×]\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:h|Std\\.?|Stunden|Stunde)(?![\\p{L}])',
+      '(\\d+)\\s*[x×]\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:h|Std\\.?|Stunden|Stunde)(?![\\p{L}])(?:\\s+((?:für|in|während)\\s+(?:die\\s+|der\\s+|den\\s+)?(?:gesamte[nr]?\\s+|ganze[nr]?\\s+|komplette[nr]?\\s+)?(?:Woche|KW\\s*\\d+|Tag)))?',
     ],
     // „1 Techniker 90 Minuten" -> Minuten werden in Stunden umgerechnet
     musterMinuten: [
-      '(\\d+)\\s*(?:Techniker|Mann|Man|MA|Mitarbeiter|Personen|Person)\\s*(?:à|á|a|je|jeweils|x|mit|für)?\\s*(\\d+)\\s*(?:min|Min\\.?|Minuten)(?![\\p{L}])',
-      '(\\d+)\\s*[x×]\\s*(\\d+)\\s*(?:min|Min\\.?|Minuten)(?![\\p{L}])',
+      '(\\d+)\\s*(?:Techniker|Mann|Man|MA|Mitarbeiter|Personen|Person)\\s*,?\\s*(?:à|á|a|je|jeweils|x|mit|für)?\\s*(\\d+)\\s*(?:min|Min\\.?|Minuten)(?![\\p{L}])(?:\\s+((?:für|in|während)\\s+(?:die\\s+|der\\s+|den\\s+)?(?:gesamte[nr]?\\s+|ganze[nr]?\\s+|komplette[nr]?\\s+)?(?:Woche|KW\\s*\\d+|Tag)))?',
+      '(\\d+)\\s*[x×]\\s*(\\d+)\\s*(?:min|Min\\.?|Minuten)(?![\\p{L}])(?:\\s+((?:für|in|während)\\s+(?:die\\s+|der\\s+|den\\s+)?(?:gesamte[nr]?\\s+|ganze[nr]?\\s+|komplette[nr]?\\s+)?(?:Woche|KW\\s*\\d+|Tag)))?',
     ],
     // Techniker genannt, aber keine Stunden -> Hinweis
     ohneStunden: '(\\d+)\\s*(?:Techniker|Mann|Man|Mitarbeiter|Personen|Person)(?![\\p{L}])',
-    format: 'AVL: {t} Techniker, jeweils {h}.',
-    formatEinTechniker: 'AVL: 1 Techniker, {h}.',
+    format: 'AVL: {t} Techniker, jeweils {h}{z}.',
+    formatEinTechniker: 'AVL: 1 Techniker, {h}{z}.',
   },
   bbaSatz: 'Die Gründe sind der Baubehinderungsanzeige zu entnehmen.',
   bbaVerweis: '\\(?\\s*(?:siehe|sie|s\\.)\\s+(?:Baubehinderungsanzeige|BBA|Behinderungsanzeige)\\s*\\)?',

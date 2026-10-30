@@ -77,6 +77,10 @@ const Textkorrektur = (() => {
   const genitivKeys = Object.keys(R.genitiv).sort((a, b) => b.length - a.length);
   const aktionsObjektKeys = Object.keys(R.aktionsObjekte).sort((a, b) => b.length - a.length);
   const ohneZusatz = new Set(R.hauptwoerterOhneZusatz.map(lc));
+  const hauptwortSet = new Set(R.hauptwoerter.map(lc));
+  const partizipAlt = [...new Set([...Object.values(R.partizipien), ...Object.values(R.infinitive)]
+    .filter((p) => !/\s/.test(p)))].map(esc).join('|');
+  const partizipKetteRe = new RegExp(`(?<![${BUCHST}])(${partizipAlt})\\s+(?=(?:${partizipAlt})(?![${BUCHST}]))`, 'giu');
   const listenEintraege = R.listenEintraege;
   const artikelRe = /^(der|des|den|dem|die|das|von|vom|aller|sämtlicher|im|in|am|an|zur|zum|für|mit)\s/iu;
   const ab = R.abstimmung;
@@ -135,8 +139,14 @@ const Textkorrektur = (() => {
     s = s.replace(/\s*\+\s*/g, ', ').replace(/^[:\s]+|[,.\s]+$/g, '');
     s = s.replace(/^\((.*)\)$/, '$1');
     let teile = s.split(/,\s*/).filter(Boolean).map((t) => {
+      // „Verkauf (komplett)" -> „Verkaufsbereich" (Stil der abgegebenen Bautagebücher)
+      t = t.replace(/\s*\(\s*(?:komplett|vollständig)\s*\)/iu, '');
       const key = lc(t).replace(/\s+/g, ' ');
-      return listenEintraege[key] || t;
+      if (listenEintraege[key]) return listenEintraege[key];
+      // „einbau der Leerpanels" -> „Einbau …", einzelnes „Paneltechnisch" -> „paneltechnisch"
+      if (hauptwortSet.has(lc(t.split(' ')[0]))) return ersterGross(t);
+      if (/^\p{L}+isch$/u.test(t)) return lc(t);
+      return t;
     });
     // Nackte Nummern gehören zum Eintrag davor: „VoCoVo 1", „2", „3" -> „VoCoVo 1, 2 und 3"
     const gruppen = [];
@@ -306,6 +316,14 @@ const Textkorrektur = (() => {
     m = zeile.match(hauptwortRe);
     if (!m) return null;
     const wort = R.hauptwortAlias[lc(m[1])] || ersterGross(lc(m[1]));
+    // „Beginn mit Montage der Lautsprecher" -> „Mit der Montage der Lautsprecher begonnen."
+    const bg = lc(m[1]) === 'beginn' && m[2].match(/^mit\s+(?:(der|dem|den)\s+)?(\p{L}+)(.*)$/iu);
+    if (bg) {
+      const nomen = ersterGross(bg[2]);
+      const art = bg[1] ? lc(bg[1]) : /(ungen|arbeiten)$/iu.test(nomen) ? 'den'
+        : /(ung|age|ion|ahme|e|heit|keit|schaft)$/iu.test(nomen) ? 'der' : 'dem';
+      return `Mit ${art} ${nomen}${bg[3]} begonnen.`;
+    }
     // „Weiterführung des Ausbaus …" bleibt ein Satz ohne „durchgeführt"
     if (ohneZusatz.has(lc(m[1]))) return m[2] ? `${wort} ${genitiv(plusAlsSowie(m[2]))}.` : null;
     const st = statusAbtrennen(m[2]);
@@ -320,6 +338,22 @@ const Textkorrektur = (() => {
     return `${wort}${obj ? ' ' + obj : ''} ${st.status}.`;
   }
 
+  // „begonnen die Datenleitungen im Serverraum zu sortieren" / „Datenleitungen zu sortieren
+  // angefangen" -> „Mit dem Sortieren der Datenleitungen im Serverraum begonnen."
+  function vorlageBeginn(zeile) {
+    let m = zeile.match(/^(?:begonnen|angefangen)(?:\s+mit)?\s+(.+?)\s+zu\s+(\p{L}+en)$/iu);
+    let objekt, verb;
+    if (m) { objekt = m[1]; verb = m[2]; } else {
+      m = zeile.match(/^(.+?)\s+zu\s+(\p{L}+en)\s+(?:begonnen|angefangen)$/iu);
+      if (!m) return null;
+      objekt = m[1]; verb = m[2];
+    }
+    // Objekt in den Genitiv: „die Datenleitungen …" -> „der Datenleitungen …", ohne Artikel „von …"
+    if (/^die\s/iu.test(objekt)) objekt = 'der ' + objekt.replace(/^die\s+/iu, '');
+    else if (!/^(der|des|dem|den|das)\s/iu.test(objekt)) objekt = 'von ' + objekt;
+    return `Mit dem ${ersterGross(lc(verb))} ${objekt} begonnen.`;
+  }
+
   function vorlage(zeile) {
     const ohnePunkt = zeile.replace(/[.\s]+$/u, '');
     // Schon fertiger Satz (endet auf „durchgeführt", „montiert" …): nicht noch einmal umbauen.
@@ -331,7 +365,7 @@ const Textkorrektur = (() => {
     if (finitRe.test(ohnePunkt)) return null;
     const fest = festeZeilen.get(lc(ohnePunkt).replace(/\s+/g, ' '));
     if (fest) return fest;
-    return vorlageAktion(ohnePunkt) || vorlageHauptwort(ohnePunkt);
+    return vorlageBeginn(ohnePunkt) || vorlageAktion(ohnePunkt) || vorlageHauptwort(ohnePunkt);
   }
 
   // Zeile mit „+" zwischen zwei eigenständigen Tätigkeiten („Auto entladen + Parkplatzsuche")
@@ -343,6 +377,8 @@ const Textkorrektur = (() => {
     if (teile.length > 1) {
       const saetze = teile.map((t) => vorlage(t.trim()));
       if (saetze.every(Boolean)) return saetze.join(' ');
+      const zusatz = teile.slice(1).map((t) => (R.zusatzTaetigkeiten || {})[lc(t.trim()).replace(/\s+/g, ' ')]);
+      if (saetze[0] && zusatz.every(Boolean)) return `${saetze[0].replace(/\.$/u, '')} sowie ${undListe(zusatz)}.`;
     }
     // „Werkzeug ausladen und Parkplatzsuche": nur trennen, wenn jeder Teil ein fester Satz ist
     const undTeile = zeile.replace(/[.\s]+$/u, '').split(/\s+und\s+/iu);
@@ -353,6 +389,25 @@ const Textkorrektur = (() => {
     return vorlage(zeile);
   }
 
+  // Erläuterung in Klammern am Zeilenende („Messen der Datenports (die mit der Leiter möglich
+  // waren)") wird für die Vorlage abgetrennt – sonst verhindert ihr Verb („waren") die Vorlage
+  // und ihr „+" zerlegt die Zeile. Abkürzungen wie „(NWS)" bleiben stehen.
+  function klammerAbtrennen(s) {
+    const m = s.match(/^(.*[^\s(])\s*\(([^()]*)\)\s*\.?$/u);
+    if (!m || !/\p{Ll}/u.test(m[2]) || !/\s/.test(m[2].trim())) return { kern: s, klammer: '' };
+    return { kern: m[1], klammer: plusAlsSowie(m[2].trim()) };
+  }
+  // Klammer vor das Schlussverb setzen („… der Datenports (…) durchgeführt."); ohne Schlussverb
+  // ans Satzende, direkt nach einer Abkürzung („(NWS)") mit Doppelpunkt statt zweiter Klammer.
+  function klammerEinsetzen(satz, klammer) {
+    const s = satz.replace(/\.$/u, '');
+    const v = s.match(/\s+(?:(?:vollständig|neu)\s+)?(?:in Betrieb\s+)?(\p{L}+)$/u);
+    if (v && (fertigRe.test(v[1]) || Object.values(R.status).includes(v[1]))) {
+      return `${s.slice(0, v.index)} (${klammer})${s.slice(v.index)}.`;
+    }
+    return /\([\p{Lu}.\d]+\)$/u.test(s) ? `${s}: ${klammer}.` : `${s} (${klammer}).`;
+  }
+
   // Satz ohne Vorlage: Grundform am Ende -> Partizip, sonst nur Satzbau.
   function freierSatz(zeile) {
     let s = zeile.replace(/[.\s]+$/u, '');
@@ -361,10 +416,12 @@ const Textkorrektur = (() => {
       const p = m && R.infinitive[lc(m[1])];
       // „beim ablängen" ist ein Hauptwort, kein Infinitiv am Satzende
       const davor = s.slice(0, m ? m.index : 0).trim().split(/\s+/).pop() || '';
-      if (p && s.split(/\s+/).length > 1 && !/^(beim|zum|vom|am|im|das|dem)$/iu.test(davor)) {
+      if (p && s.split(/\s+/).length > 1 && !/^(beim|zum|vom|am|im|das|dem|zu)$/iu.test(davor)) {
         s = s.slice(0, m.index) + p;
       }
       s = plusAlsSowie(s);
+      // „eingebracht aufgestellt und ausgerichtet" -> „eingebracht, aufgestellt und ausgerichtet"
+      s = s.replace(partizipKetteRe, '$1, ');
     }
     return s;
   }
@@ -459,8 +516,10 @@ const Textkorrektur = (() => {
     const v = h.replace('.', ',');
     return v === '1' ? '1 Stunde' : `${v} Stunden`;
   }
-  function avlZeile(t, h) {
-    return (+t === 1 ? R.avl.formatEinTechniker : R.avl.format).replace('{t}', t).replace('{h}', stunden(h));
+  // zeitraum: optionaler Zusatz des Technikers („für die gesamte Woche") – bleibt erhalten
+  function avlZeile(t, h, zeitraum) {
+    return (+t === 1 ? R.avl.formatEinTechniker : R.avl.format).replace('{t}', t)
+      .replace('{h}', stunden(h)).replace('{z}', zeitraum ? ' ' + zeitraum.replace(/\s+/g, ' ') : '');
   }
   // Minuten -> Stunden mit Komma („90" -> „1,5")
   const minutenAlsStunden = (min) => String(Math.round((+min / 60) * 100) / 100).replace('.', ',');
@@ -468,10 +527,10 @@ const Textkorrektur = (() => {
   function avlHerausloesen(text) {
     const avl = [];
     for (const re of avlRe) {
-      text = text.replace(re, (m, t, h) => { avl.push(avlZeile(t, h)); return ' '; });
+      text = text.replace(re, (m, t, h, z) => { avl.push(avlZeile(t, h, z)); return ' '; });
     }
     for (const re of avlMinRe) {
-      text = text.replace(re, (m, t, min) => { avl.push(avlZeile(t, minutenAlsStunden(min))); return ' '; });
+      text = text.replace(re, (m, t, min, z) => { avl.push(avlZeile(t, minutenAlsStunden(min), z)); return ' '; });
     }
     if (avl.length) {
       // Reste der Angabe entfernen: „… Überlänge haben werden. AVL Zeiten" / „(, siehe E-Mail)"
@@ -488,6 +547,24 @@ const Textkorrektur = (() => {
   }
   const enthaeltAvl =(s) => [...avlRe, ...avlMinRe].some((re) => { re.lastIndex = 0; const t = re.test(s); re.lastIndex = 0; return t; });
 
+  // ---------------- Korrekturspeicher ----------------
+  // Satzpaare aus js/korrekturspeicher.js (gepflegt im AVL-Tool, Reiter „Bautagebuch-Texte").
+  // Der Speicher wird bei jedem Aufruf aus globalThis gelesen: Das AVL-Tool legt dort vor der
+  // Korrektur seinen aktuelleren Stand (Netzlaufwerk) ab.
+  // Schlüssel = Zeile klein, Leerraum zusammengefasst, ohne Satzzeichen am Ende.
+  const schluessel = (s) => lc(String(s || '')).replace(/\s+/g, ' ').trim().replace(/[\s.,;:!?]+$/u, '');
+  function speicherFuer(feld) {
+    const g = typeof globalThis !== 'undefined' ? globalThis : window;
+    const roh = (g.KORREKTURSPEICHER && g.KORREKTURSPEICHER[feld]) || {};
+    const eintraege = {};
+    const werte = new Map(); // schon korrigierte Zeile -> ihre gespeicherte Schreibweise
+    for (const [k, v] of Object.entries(roh)) {
+      eintraege[schluessel(k)] = v;
+      String(v).split('\n').forEach((w) => { if (w.trim()) werte.set(schluessel(w), w.trim()); });
+    }
+    return { eintraege, werte };
+  }
+
   // ---------------- Hauptfunktion ----------------
   function korrigiere(text, feld) {
     const regeln = new Set();
@@ -500,31 +577,54 @@ const Textkorrektur = (() => {
     }
 
     const saetze = [];
+    const zeilen = [];
     let avlGesamt = 0;
-    for (const zeile of zeilenVorbereiten(text)) {
+    const speicher = speicherFuer(feld);
+    // Eine vorbereitete Zeile verarbeiten; Rückgabe = Quelle des Ergebnisses
+    // ('speicher' = Korrekturspeicher, 'regel' = Standardsatz/feste Form, 'frei' = nur bereinigt).
+    const verarbeite = (zeile) => {
       let z = zeile;
+      // Korrekturspeicher hat Vorrang vor allen Regeln (nur exakter Treffer). Eine Zeile, die
+      // selbst schon eine gespeicherte Korrektur ist, bleibt unverändert (zweiter Lauf).
+      const k = schluessel(z);
+      if (speicher.eintraege[k] != null || speicher.werte.has(k)) {
+        const wert = speicher.eintraege[k] != null ? speicher.eintraege[k] : speicher.werte.get(k);
+        const gemerkt = String(wert).split('\n').map((s) => s.trim()).filter(Boolean);
+        // AVL-Zeilen aus dem Merkzettel zählen als erkannte AVL-Angabe (sonst Fehlalarm
+        // „Techniker genannt, aber keine Stunden erkannt")
+        avlGesamt += gemerkt.filter((s) => /^AVL:\s\d+\sTechniker,\s(?:jeweils\s)?\d/u.test(s)).length;
+        saetze.push(...gemerkt);
+        regeln.add('Korrekturspeicher');
+        return 'speicher';
+      }
       // AVL steht direkt unter der zugehörigen Beschreibung (Spec §34, §42)
       let avl = [];
+      // Bereits fertige AVL-Zeile („AVL: 3 Techniker, jeweils 5 Stunden.") nicht erneut zerlegen
+      // (zählt als erkannte AVL-Angabe – sonst käme „Techniker genannt, aber keine Stunden erkannt")
+      if (/^AVL:\s\d+\sTechniker,\s(?:jeweils\s)?\d/u.test(z.trim())) { saetze.push(satzbau(z.trim())); avlGesamt++; return 'regel'; }
       if (feld === 'behinderungen') {
         const r = avlHerausloesen(z);
         z = r.text; avl = r.avl; avlGesamt += avl.length;
         if (avl.length) regeln.add('AVL-Angabe vereinheitlicht');
-        if (!z) { saetze.push(...avl); continue; }
+        if (!z) { saetze.push(...avl); return 'regel'; }
       }
       let bba = false;
       bbaRe.lastIndex = 0;
       if (bbaRe.test(z)) { bba = true; z = z.replace(bbaRe, ' ').trim(); }
       bbaRe.lastIndex = 0;
-      if (!z) { if (bba) saetze.push(R.bbaSatz); saetze.push(...avl); continue; }
+      if (!z) { if (bba) saetze.push(R.bbaSatz); saetze.push(...avl); return 'regel'; }
 
       const n = normalisiere(z);
       if (n !== satzzeichen(z)) regeln.add('Schreibweisen und Fachbegriffe');
-      let satz = vorlageMitPlus(n);
+      const kl = klammerAbtrennen(n);
+      let satz = vorlageMitPlus(kl.kern);
+      if (satz && kl.klammer) satz = klammerEinsetzen(satz, kl.klammer);
       // Regex-Regeln auch auf den neu gebauten Satz anwenden („für gesamter …", „der NWS"),
       // damit ein zweiter Durchlauf nichts mehr ändert.
       if (satz) { for (const [re, ers] of regexRegeln) satz = satz.replace(re, ers); }
+      let quelle = 'regel';
       if (satz) regeln.add('Standardformulierung');
-      else { satz = freierSatz(n); freieZeilen++; }
+      else { satz = freierSatz(n); freieZeilen++; quelle = 'frei'; }
       satz = satzbau(satz);
       if (bba) {
         satz += ' ' + R.bbaSatz;
@@ -534,6 +634,12 @@ const Textkorrektur = (() => {
       // Doppelt eingetragene Zeile („Ankunft Baustelle" + „Ankunft auf der Baustelle.") nur einmal
       if (satz !== saetze[saetze.length - 1]) saetze.push(satz);
       saetze.push(...avl);
+      return quelle;
+    };
+    for (const zeile of zeilenVorbereiten(text)) {
+      const start = saetze.length;
+      const quelle = verarbeite(zeile);
+      zeilen.push({ original: zeile, ergebnis: saetze.slice(start).join('\n'), quelle });
     }
 
     if (feld === 'behinderungen' && !avlGesamt && avlOhneStundenRe.test(text)) {
@@ -555,8 +661,8 @@ const Textkorrektur = (() => {
         ergebnis = ergebnis.slice(0, bar.index) + neu + ergebnis.slice(bar.index + bar[0].length);
       }
     }
-    return { text: ergebnis, regeln: [...regeln], hinweise, freieZeilen };
+    return { text: ergebnis, regeln: [...regeln], hinweise, freieZeilen, zeilen };
   }
 
-  return { korrigiere };
+  return { korrigiere, schluessel };
 })();
