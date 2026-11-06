@@ -149,9 +149,10 @@ const Docx = (() => {
   // Farbiger Abschnitts-Balken über die ganze Textbreite (Absatzschattierung), weiße
   // fette Schrift. keepNext hält ihn mit dem folgenden Inhalt auf einer Seite.
   // anker (optional): Textmarke, auf die z. B. eine Übersichtstabelle verlinken kann.
-  const pBar = (str, fill, anker) =>
+  // vorher: Abstand über dem Balken (Standard 280; 0 oben auf einer neuen Seite).
+  const pBar = (str, fill, anker, vorher) =>
     `<w:p><w:pPr><w:keepNext/><w:shd w:val="clear" w:color="auto" w:fill="${fill || '1F4E78'}"/>` +
-    '<w:spacing w:before="280" w:after="120"/></w:pPr>' +
+    `<w:spacing w:before="${vorher == null ? 280 : vorher}" w:after="120"/></w:pPr>` +
     bookmark(anker, `<w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/><w:sz w:val="26"/></w:rPr>${runText(' ' + str)}</w:r>`) + '</w:p>';
 
   // Setzt <w:keepNext/> in jeden Absatz eines XML-Stücks (ohneLetzten: den letzten Absatz
@@ -177,14 +178,16 @@ const Docx = (() => {
   // color, sz, align, anker }] }], widths: Spaltenbreiten in Twips (Summe = Textbreite 9638).
   // Kopfzeilen wiederholen sich auf jeder Seite (tblHeader). anker: Text verlinkt auf diese
   // Textmarke (Aussehen bleibt gleich).
-  function table(rows, widths) {
+  // opts.abstand: Abstand über/unter dem Text je Zelle (Standard 40; kompakter z. B. 30).
+  function table(rows, widths, opts) {
+    const ab = (opts && opts.abstand != null) ? opts.abstand : 40;
     const total = widths.reduce((a, b) => a + b, 0);
     const line = (s) => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="BFC5CC"/>`;
     const borders = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(line).join('');
     const cellPara = (c) => {
       const rPr = (c.bold ? '<w:b/>' : '') + (c.color ? `<w:color w:val="${c.color}"/>` : '')
         + (c.sz ? `<w:sz w:val="${c.sz}"/>` : '');
-      return `<w:p>${pPr(c.align, '<w:spacing w:before="40" w:after="40"/>')}` +
+      return `<w:p>${pPr(c.align, `<w:spacing w:before="${ab}" w:after="${ab}"/>`)}` +
         hyperlinkRun(c.anker, `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}${runText(c.text)}</w:r>`) + '</w:p>';
     };
     const tr = (r) => '<w:tr>' + (r.header ? '<w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>' : '<w:trPr><w:cantSplit/></w:trPr>') +
@@ -273,7 +276,7 @@ const Docx = (() => {
     ' w:header="567" w:footer="567" w:gutter="0"/>' +
     (mitKopfFuss ? '<w:titlePg/>' : '') + '</w:sectPr>';
 
-  const contentTypes = (mitKopfFuss) =>
+  const contentTypes = (mitKopfFuss, mitDaten) =>
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
@@ -286,6 +289,7 @@ const Docx = (() => {
       ? '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' +
         '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
       : '') +
+    (mitDaten ? '<Override PartName="/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/>' : '') +
     '</Types>';
 
   // Kopfzeile: kleiner grauer Text mit feiner Linie darunter. Fußzeile rechts „Seite x von y"
@@ -330,6 +334,7 @@ const Docx = (() => {
     let relSeq = 1;    // rId1 ist für styles.xml reserviert -> Bilder ab rId2
     let imgSeq = 0;    // laufende Bildnummer (Dateiname + docPr/cNvPr id)
     let kopfText = null; // gesetzt per kopfFuss() -> Kopf-/Fußzeile ab Seite 2
+    let datenXml = null; // gesetzt per daten() -> unsichtbarer Custom-XML-Teil
 
     const api = {
       // Ein oder mehrere fertige Absatz-XML-Strings anhängen (null/'' wird ignoriert).
@@ -338,6 +343,15 @@ const Docx = (() => {
           if (Array.isArray(x)) api.push(...x);
           else if (x) body.push(x);
         }
+        return api;
+      },
+
+      // Maschinenlesbare Daten unsichtbar mitgeben (Custom-XML-Teil customXml/item1.xml, den
+      // Word beim Speichern behält). Wurzel mit eigenem Namespace, Inhalt JSON als Text –
+      // das AVL-Tool liest daraus die Wochenbericht-Übersicht (ab v83).
+      daten(namespace, wurzel, obj) {
+        datenXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+          + `<${wurzel} xmlns="${escapeAttr(namespace)}">${escapeXml(JSON.stringify(obj))}</${wurzel}>`;
         return api;
       },
 
@@ -550,7 +564,17 @@ const Docx = (() => {
         const zip = new JSZip();
 
         const hf = kopfText != null;
-        zip.file('[Content_Types].xml', contentTypes(hf));
+        zip.file('[Content_Types].xml', contentTypes(hf, !!datenXml));
+        if (datenXml) {
+          zip.file('customXml/item1.xml', datenXml);
+          zip.file('customXml/itemProps1.xml', '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+            + '<ds:datastoreItem ds:itemID="{6B3E1C2A-8F4D-4E5B-9A7C-2D1F0E3B4A5C}" '
+            + 'xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"><ds:schemaRefs/></ds:datastoreItem>');
+          zip.file('customXml/_rels/item1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="itemProps1.xml"/>'
+            + '</Relationships>');
+        }
         zip.file('_rels/.rels', ROOT_RELS);
         zip.file('word/styles.xml', STYLES_XML);
         if (hf) {
@@ -573,6 +597,7 @@ const Docx = (() => {
           '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
           (hf ? '<Relationship Id="rIdKopf" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' +
             '<Relationship Id="rIdFuss" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' : '') +
+          (datenXml ? '<Relationship Id="rIdDaten" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>' : '') +
           media.map((m) =>
             `<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${escapeAttr('media/' + m.file)}"/>`
           ).join('') +
