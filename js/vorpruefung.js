@@ -197,8 +197,8 @@ const Vorpruefung = (() => {
           </label>
           <div class="vp-photos"></div>
           ${ro ? '' : `<div class="toolrow vp-photobtns">
-            <button type="button" class="btn ghost vp-cam">📷 Foto</button>
-            <button type="button" class="btn ghost vp-gal">🖼 Galerie</button>
+            <button type="button" class="btn ghost vp-cam">${Icon('camera')} Foto</button>
+            <button type="button" class="btn ghost vp-gal">${Icon('image')} Galerie</button>
           </div>`}
         </div>`;
 
@@ -252,7 +252,7 @@ const Vorpruefung = (() => {
         <img src="${url}" alt="" loading="lazy" />
         <input class="vp-cap" type="text" placeholder="Bildunterschrift"
           value="${escAttr(ph.caption || '')}"${ro ? ' disabled' : ''} autocomplete="off" />
-        ${ro ? '' : '<button type="button" class="vp-del" title="Foto entfernen">✕</button>'}`;
+        ${ro ? '' : '<button type="button" class="vp-del" title="Foto entfernen" aria-label="Foto entfernen">' + Icon('x') + '</button>'}`;
       const cap = w.querySelector('.vp-cap');
       if (cap && !ro) cap.onchange = async () => { ph.caption = cap.value; await DB.updatePhoto(ph); };
       const del = w.querySelector('.vp-del');
@@ -279,7 +279,7 @@ const Vorpruefung = (() => {
       if (card) card.classList.toggle('missing', bad);
       if (bad && !first) first = card;
     }
-    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (first) first.scrollIntoView({ behavior: App.sanft(), block: 'center' });
   }
 
   async function complete() {
