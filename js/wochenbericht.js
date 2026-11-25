@@ -1,6 +1,6 @@
 /* wochenbericht.js – Wochenabfrage Baustelle für den Innendienst.
    Am Ende jeder Arbeitswoche hält der Vorarbeiter den Baufortschritt fest: fester
-   Fragenkatalog in sieben Abschnitten, Pflichtfotos und Pflicht-Begründungen an
+   Fragenkatalog in acht Abschnitten (ab v85.8 mit Hebebühnen), Pflichtfotos und Pflicht-Begründungen an
    festgelegten Stellen, dazu ein optionales Notizfeld je Auswahlpunkt. Daraus entsteht
    ein gestalteter Word-Bericht (Logo, Ampel-Übersicht, farbige Abschnitts-Balken, Fotos
    zwei pro Zeile), der über App.shareFile verschickt wird.
@@ -17,7 +17,8 @@
                                                     bereiche: { <uid>: { status, text, bestaetigt } },
                                                     anzahl } },
                               erstelltAm, updatedAt, exportiertAm } ]
-   katalog: 2 ab v82 (Baufortschritt nach Bereichen, ABSCHNITTE); fehlt das Feld, ist es ein
+   katalog: 2 ab v82 (Baufortschritt nach Bereichen), 3 ab v85.8 (+ Spannungsversorgung, Hebebühnen);
+   fehlt das Feld, ist es ein
    älterer Bericht mit dem alten Fragenkatalog (ABSCHNITTE_V1), der unverändert so bleibt.
    Ein neuer Bericht übernimmt den Fortschritt (Punkte vom Typ 'fortschritt') aus dem letzten
    Bericht mit katalog 2; vor = { <pid>: status } hält den übernommenen Gewerksstatus fest.
@@ -107,7 +108,7 @@ const Wochenbericht = (() => {
       // Ab v60 Pflicht: mindestens 3 Fotos, außer „kein Fortschritt diese Woche". Die Gruppe
       // behält die id 'kabel' (früher „Kabelzüge"), damit vorhandene Fotos weiter zählen; die
       // frühere Gruppe „Serverschränke" (d2-server) zieht nach f6 um (siehe altFotosUmziehen).
-      { id: 'd2', typ: 'fotos', titel: 'Fortschrittsbilder', pflichtMin: 3,
+      { id: 'd2', typ: 'fotos', titel: 'Fortschrittsbilder', pflichtMin: 3, wordSpalten: 3,
         nichts: '– kein Fortschritt diese Woche –', gruppen: [
           { id: 'kabel', label: 'Kabelzug/Ausbau Datendosen' },
         ] },
@@ -212,8 +213,49 @@ const Wochenbericht = (() => {
         : { ...o, text: { pflicht: true, label: 'Was fehlt noch und/oder Begründung (Pflichtfeld)' } })) })),
   ] }));
 
-  // Katalog des geöffneten Berichts.
-  const abschnitte = () => (current && current.katalog === 2 ? ABSCHNITTE : ABSCHNITTE_V1);
+  // ---- Ab v85.8 (katalog 3): Spannungsversorgung (Abschnitt 3) und Abschnitt „Hebebühnen“.
+  // Neue Punkte tragen ab: 3 – in Berichten mit katalog 2 fehlen sie, damit fertige oder schon
+  // verschickte Berichte nicht plötzlich offene Pflichtpunkte haben.
+  // Typ 'zeilen': mehrere Zeilen mit denselben Knöpfen in einer Karte (a.bereiche[<zeile>]).
+  // Typ 'buehnen': Anzahl Hebebühnen vor Ort (a.status '0'|'1'|'2') + je Bühne Pflichtfoto
+  //   (Fotogruppen '<pid>-b1', '<pid>-b2'). Nummer und Standort belegt das Foto (Michael).
+  // sichtbar(bericht): Punkt nur zeigen/verlangen, wenn die Bedingung erfüllt ist.
+  // vorbelegen(alterStatus): Status für den neuen Bericht aus der Vorwoche (oder null).
+  const statusVon = (b, pid) => ((b && b.antworten && b.antworten[pid]) || {}).status;
+  const SPANNUNG = { id: 'f12', typ: 'zeilen', titel: 'Spannungsversorgung', imKasten: true, ab: 3,
+    zeilen: [{ id: 'nws', label: 'NWS' }, { id: 'filiale', label: 'Filiale' }],
+    optionen: [
+      { v: 'ja', label: 'vorhanden', ampel: 'gruen' },
+      { v: 'nein', label: 'nicht vorhanden', ampel: 'rot',
+        text: { pflicht: true, label: 'Seit wann / an wen gemeldet? (Pflichtfeld)' } },
+    ] };
+  const BUEHNEN_DA = ['ok', 'probleme', 'erledigt'];
+  const buehnenDa = (b) => BUEHNEN_DA.includes(statusVon(b, 'h1'));
+  const HEBEBUEHNEN = { id: 's8', titel: 'Hebebühnen', ab: 3, punkte: [
+    { id: 'h1', typ: 'wahl', titel: 'Einbringen in die Filiale', viele: true, optionen: [
+      { v: 'keine', label: 'keine Hebebühne benötigt', kurz: 'keine benötigt', ampel: 'grau' },
+      { v: 'nichtangeliefert', label: 'noch nicht angeliefert', kurz: 'nicht angeliefert', ampel: 'grau' },
+      { v: 'ok', label: 'ohne Probleme eingebracht', kurz: 'eingebracht', ampel: 'gruen' },
+      { v: 'probleme', label: 'Probleme beim Einbringen', kurz: 'Probleme', ampel: 'rot',
+        text: { pflicht: true, label: 'Was ist das Problem? (Pflichtfeld)' },
+        fotos: { min: 1, label: 'Foto des Problems (Pflicht, mindestens 1)' } },
+      { v: 'erledigt', label: 'bereits erledigt', ampel: 'gruen' },
+    ], vorbelegen: (alt) => (alt === 'ok' || alt === 'erledigt' ? 'erledigt' : alt === 'keine' ? 'keine' : null) },
+    { id: 'h2', typ: 'buehnen', titel: 'Hebebühnen vor Ort', sichtbar: buehnenDa,
+      gruppen: [{ id: 'b1', label: 'Hebebühne 1' }, { id: 'b2', label: 'Hebebühne 2' }] },
+    { id: 'h3', typ: 'wahl', titel: 'Wird die 2. Hebebühne noch gebraucht?',
+      sichtbar: (b) => buehnenDa(b) && statusVon(b, 'h2') === '2', optionen: JA_NEIN('gruen', 'gelb') },
+  ] };
+  ABSCHNITTE.find((s) => s.id === 's3').punkte.splice(
+    ABSCHNITTE.find((s) => s.id === 's3').punkte.findIndex((p) => p.id === 'f6') + 1, 0, SPANNUNG);
+  ABSCHNITTE.splice(ABSCHNITTE.findIndex((s) => s.id === 's5') + 1, 0, HEBEBUEHNEN);
+  const ABSCHNITTE_K2 = ABSCHNITTE.filter((s) => !s.ab).map((s) => ({ ...s, punkte: s.punkte.filter((p) => !p.ab) }));
+
+  // Katalog des geöffneten Berichts; ausgeblendete Punkte (sichtbar) fehlen. Sie stehen
+  // jeweils am Ende ihres Abschnitts, die Nummern der übrigen bleiben also gleich.
+  const katalogVon = (b) => (b && b.katalog >= 3 ? ABSCHNITTE : b && b.katalog === 2 ? ABSCHNITTE_K2 : ABSCHNITTE_V1);
+  const abschnitte = () => katalogVon(current).map((s) => (s.punkte.some((p) => p.sichtbar)
+    ? { ...s, punkte: s.punkte.filter((p) => !p.sichtbar || p.sichtbar(current)) } : s));
   const allePunkte = () => abschnitte().flatMap((s) => s.punkte);
   const istPflicht = (p) => p.typ !== 'fotos' || !!p.pflichtMin;
   const pflichtPunkte = () => allePunkte().filter(istPflicht);
@@ -286,19 +328,38 @@ const Wochenbericht = (() => {
   const neueId = () => 'wb' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
   function leer(kw) {
-    return { id: neueId(), kw, gespraechspartner: '', katalog: 2, vor: {}, antworten: {},
+    return { id: neueId(), kw, gespraechspartner: '', katalog: 3, vor: {}, antworten: {},
       erstelltAm: Date.now(), updatedAt: Date.now(), exportiertAm: null };
   }
   // Fortschritt aus dem letzten älteren Bericht (katalog 2) übernehmen. Teilweise fertige
   // Unterpunkte muss der Techniker bestätigen („unverändert“) oder ändern; alles andere gilt
   // gleich als beantwortet. Fotos werden nicht übernommen.
-  function vorbelegen(job, b) {
-    const vorher = liste(job).filter((x) => x.katalog === 2 && x.kw < b.kw)
+  // nurNeue (v85.9): beim Umstellen eines offenen Berichts auf katalog 3 nur die neuen Punkte
+  // (ab: 3) vorbelegen, die noch keine Antwort haben – alles andere bleibt, wie es ist.
+  function vorbelegen(job, b, nurNeue) {
+    const vorher = liste(job).filter((x) => x.katalog >= 2 && x.kw < b.kw)
       .sort((x, y) => (x.kw < y.kw ? 1 : -1))[0];
     if (!vorher) return;
-    for (const p of ABSCHNITTE.flatMap((s) => s.punkte)) {
-      if (p.typ !== 'fortschritt') continue;
+    const leereAntwort = (status) => ({ status, text: '', notiz: '', nichts: false, unter: { status: null, text: '' } });
+    const neuePunkte = HEBEBUEHNEN.punkte.concat([SPANNUNG]);
+    for (const p of nurNeue ? neuePunkte : ABSCHNITTE.flatMap((s) => s.punkte)) {
+      if (nurNeue && b.antworten[p.id]) continue;
       const alt = vorher.antworten[p.id];
+      // v85.8: „bereits erledigt“ / „keine benötigt“ (Hebebühnen), Spannung „vorhanden“, Anzahl Bühnen.
+      if (p.vorbelegen && alt && alt.status) {
+        const s = p.vorbelegen(alt.status);
+        if (s) { b.antworten[p.id] = leereAntwort(s); b.vor[p.id] = alt.status; }
+      }
+      if (p.typ === 'zeilen' && alt && alt.bereiche) {
+        const bereiche = {};
+        for (const u of p.zeilen) if ((alt.bereiche[u.id] || {}).status === 'ja') bereiche[u.id] = { status: 'ja', text: '' };
+        if (Object.keys(bereiche).length) b.antworten[p.id] = Object.assign(leereAntwort(null), { bereiche });
+      }
+      if (p.typ === 'buehnen' && alt && alt.status != null && (!p.sichtbar || p.sichtbar(vorher))) {
+        b.antworten[p.id] = leereAntwort(alt.status);
+        b.vor[p.id] = alt.status;             // Zahl der Felder bei „alle abgeholt“ (Kasten)
+      }
+      if (p.typ !== 'fortschritt') continue;
       if (!alt || !alt.status) continue;
       const neu = { status: alt.status, text: '', notiz: '', nichts: false, unter: { status: null, text: '' }, bereiche: {} };
       if (alt.anzahl) neu.anzahl = alt.anzahl;
@@ -353,8 +414,50 @@ const Wochenbericht = (() => {
   // anteilFertig/anteilTeil für den Balken (0…1).
   // NWS eingebracht: Stufen des Balkens (v83.3) – erreicht ab der jeweiligen Option.
   const NWS_STUFEN = [['angeliefert', 'angeliefert'], ['in Filiale', 'filiale'], ['im Serverraum', 'serverraum']];
+  // Zeile „Hebebühnen“ im Kasten „Baufortschritt“ (v85.10, Variante B): ein Eintrag für den ganzen
+  // Abschnitt 6, Balken mit einem Feld je Bühne. Ohne „Vorwoche … abgezogen“ – ein Team, das die
+  // Baustelle übernommen hat, kann den Stand der Vorwoche nicht kennen (Michael).
+  const KASTEN_BUEHNEN = { id: 's8', typ: 'abschnittszeile', titel: 'Hebebühnen' };
+  function buehnenStand(b) {
+    const leerSt = (text, ampel, felder) => ({ text, ampel, anteilFertig: 0, anteilTeil: 0, felder });
+    const grau = (label) => [{ label, farbe: 'o' }];
+    const h1 = statusVon(b, 'h1'), h2 = statusVon(b, 'h2'), h3 = statusVon(b, 'h3');
+    if (h1 === 'keine') return leerSt('keine Hebebühne benötigt', 'grau', grau('entfällt'));
+    if (h1 === 'nichtangeliefert') return leerSt('noch nicht angeliefert', 'grau', grau('noch nicht angeliefert'));
+    if (!BUEHNEN_DA.includes(h1) || !['0', '1', '2'].includes(h2)) return leerSt('noch nicht ausgefüllt', 'rot', grau('offen'));
+    const n = +h2;
+    if (n === 0) {
+      const vor = Math.max(1, +(((b && b.vor) || {}).h2) || 0);
+      return leerSt('alle abgeholt', 'grau', Array.from({ length: vor }, () => ({ label: 'abgeholt', farbe: 'o' })));
+    }
+    const felder = Array.from({ length: n }, (_, i) => ({ label: 'Bühne ' + (i + 1), farbe: 'f' }));
+    if (h1 === 'probleme') {
+      felder.forEach((x) => { x.farbe = 'r'; });
+      return leerSt(`Probleme beim Einbringen · ${n} vor Ort`, 'rot', felder);
+    }
+    if (n === 2 && h3 === 'nein') {
+      felder[1].farbe = 't';
+      return leerSt('2 vor Ort · 2. Bühne nicht mehr benötigt', 'gelb', felder);
+    }
+    return leerSt(`${n} vor Ort`, 'gruen', felder);
+  }
+  // Kasten-Liste: Punkte mit imKasten, am Ende die Zeile „Hebebühnen“ (nur wenn der Abschnitt da ist).
+  const kastenPunkte = () => allePunkte().filter(imKasten)
+    .concat(abschnitte().some((s) => s.id === 's8') ? [KASTEN_BUEHNEN] : []);
+
   function fortschrittStand(p, a) {
     a = a || {};
+    // Spannungsversorgung (v85.8): grün nur, wenn alle Zeilen „vorhanden“ sind.
+    if (p.typ === 'zeilen') {
+      const z = p.zeilen.map((u) => [u, p.optionen.find((o) => o.v === bereichVon(a, u.id).status)]);
+      const felder = z.map(([u, o]) => ({ label: u.label, farbe: !o ? 'o' : o.ampel === 'gruen' ? 'f' : 'r' }));
+      if (z.some(([, o]) => !o)) return { text: 'noch nicht ausgefüllt', ampel: 'rot', anteilFertig: 0, anteilTeil: 0, felder };
+      const ja = z.filter(([, o]) => o.ampel === 'gruen').length;
+      const text = ja === z.length ? p.zeilen.map((u) => u.label).join(' und ') + ' vorhanden'
+        : z.map(([u, o]) => `${u.label} ${o.label}`).join(' · ');
+      return { text, ampel: ja === z.length ? 'gruen' : 'rot', anteilFertig: ja / z.length, anteilTeil: 0, felder };
+    }
+    if (p.typ === 'abschnittszeile') return buehnenStand(current);
     // Auswahlpunkt (Kabelzug IC, Messung, NWS, Büro …): Stand aus der gewählten Option;
     // grün füllt den Balken grün, gelb gelb, grau bleibt leer.
     if (p.typ === 'wahl') {
@@ -409,6 +512,17 @@ const Wochenbericht = (() => {
     if (p.typ === 'fotos') {
       if (!p.pflichtMin) return true;
       return !!a.nichts || (fotoZahl.get(p.id) || 0) >= p.pflichtMin;
+    }
+    if (p.typ === 'zeilen') {
+      return p.zeilen.every((u) => {
+        const x = bereichVon(a, u.id);
+        const o = p.optionen.find((q) => q.v === x.status);
+        return !!o && !(o.text && o.text.pflicht && !voll(x.text));
+      });
+    }
+    if (p.typ === 'buehnen') {
+      if (!['0', '1', '2'].includes(a.status)) return false;
+      return p.gruppen.slice(0, +a.status).every((g) => (fotoZahl.get(p.id + '-' + g.id) || 0) >= 1);
     }
     if (p.typ === 'frei') {
       if (a.nichts) return true;
@@ -496,6 +610,7 @@ const Wochenbericht = (() => {
       // v50) zählen nicht mehr mit – sie bleiben gespeichert und stecken weiter im ZIP.
       if (teil.includes('-') && !D2_GRUPPEN.has(teil)) continue;
       fotoZahl.set(pid, (fotoZahl.get(pid) || 0) + 1);
+      if (teil.includes('-')) fotoZahl.set(teil, (fotoZahl.get(teil) || 0) + 1);   // je Gruppe (Hebebühnen)
     }
   }
 
@@ -581,7 +696,10 @@ const Wochenbericht = (() => {
   }
 
   // Balken für den Stand eines Gewerks (App): grün = fertig, gelb = teilweise.
-  const balkenHtml = (st) => (st.stufen
+  // felder (v85.10): beschriftete Felder je Zeile/Bühne – f grün, t gelb, r rot, o grau.
+  const balkenHtml = (st) => (st.felder
+    ? `<div class="wb-fs-bar stufen">${st.felder.map((x) => `<i class="${x.farbe === 'o' ? '' : x.farbe}">${escHtml(x.label)}</i>`).join('')}</div>`
+    : st.stufen
     ? `<div class="wb-fs-bar stufen">${st.stufen.map((x) => `<i class="${x.an ? st.farbe : ''}">${escHtml(x.label)}</i>`).join('')}</div>`
     : `<div class="wb-fs-bar"><i class="f" style="width:${(st.anteilFertig * 100).toFixed(1)}%"></i>`
     + `<i class="t" style="width:${(st.anteilTeil * 100).toFixed(1)}%"></i></div>`);
@@ -658,7 +776,7 @@ const Wochenbericht = (() => {
   function renderFortschritt() {
     const box = $('#wbFortschritt');
     if (!box) return;
-    const gewerke = current && current.katalog === 2 ? allePunkte().filter(imKasten) : [];
+    const gewerke = current && current.katalog >= 2 ? kastenPunkte() : [];
     box.hidden = !gewerke.length;
     if (!gewerke.length) { box.innerHTML = ''; return; }
     box.innerHTML = '<div class="wb-fs-titel">Baufortschritt</div>' + gewerke.map((p) => {
@@ -670,8 +788,18 @@ const Wochenbericht = (() => {
     box.querySelectorAll('.wb-fs-row').forEach((b) => {
       b.onclick = async () => {
         const pid = b.dataset.pid;
+        if (klappt) return;
+        // Zeile „Hebebühnen“: den ganzen Abschnitt öffnen (keine Unterordner).
+        if (pid === KASTEN_BUEHNEN.id) {
+          if (offen.has(pid)) { App.kopfNachOben(document.querySelector(secSel(pid))); return; }
+          offen = new Set([pid]);
+          offenSub = new Set();
+          aufgeklappt = secSel(pid);
+          await render();
+          return;
+        }
         const s = abschnitte().find((x) => x.punkte.some((q) => q.id === pid));
-        if (!s || klappt) return;
+        if (!s) return;
         // Abschnitt und Unterordner des Punkts öffnen; der Unterordner gleitet nach oben.
         if (offen.has(s.id) && offenSub.has(pid)) { App.kopfNachOben(document.querySelector(subSel(pid))); return; }
         if (offen.has(s.id)) { await klappen('.wb-sub', subSel(pid), () => { offenSub = new Set([pid]); return true; }); return; }
@@ -729,6 +857,45 @@ const Wochenbericht = (() => {
     }
 
     if (p.typ === 'fortschritt') await fortschrittKarte(card, p, a);
+
+    // Spannungsversorgung (v85.8): je Zeile (NWS, Filiale) die Knöpfe, bei „nicht vorhanden“ Pflichttext.
+    if (p.typ === 'zeilen') {
+      if (!a.bereiche) a.bereiche = {};
+      const box = document.createElement('div');
+      box.className = 'wb-bereiche';
+      for (const u of p.zeilen) {
+        if (!a.bereiche[u.id]) a.bereiche[u.id] = { status: null, text: '' };
+        const x = a.bereiche[u.id];
+        const o = p.optionen.find((q) => q.v === x.status);
+        const row = document.createElement('div');
+        row.className = 'wb-bereich' + (x.status ? ' gesetzt' : '');
+        row.innerHTML = `<div class="wb-bname">${escHtml(u.label)}</div>` + auswahlKnoepfe(p.optionen, x.status);
+        row.querySelectorAll('.vp-opt').forEach((b) => {
+          b.onclick = async () => { x.status = b.dataset.val; await saveNow(); await render(`.wb-item[data-pid="${p.id}"]`); };
+        });
+        if (o && o.text) {
+          row.insertAdjacentHTML('beforeend', `<label class="vp-textlabel wb-detail">${escHtml(o.text.label)}
+            <textarea class="vp-text wb-auto wb-btext" rows="2">${escHtml(x.text || '')}</textarea></label>`);
+          const ta = row.querySelector('.wb-btext');
+          ta.oninput = () => { x.text = ta.value; autoHoehe(ta); scheduleSave(); aktualisiere(); };
+        }
+        box.appendChild(row);
+      }
+      card.appendChild(box);
+    }
+
+    // Hebebühnen vor Ort (v85.8): Anzahl, je Bühne ein Pflichtfoto (Nummer und Standort erkennbar).
+    if (p.typ === 'buehnen') {
+      const opts = [{ v: '0', label: '0 (alle abgeholt)', ampel: 'neutral' },
+        { v: '1', label: '1', ampel: 'neutral' }, { v: '2', label: '2', ampel: 'neutral' }];
+      card.insertAdjacentHTML('beforeend', '<div class="wb-uq">Anzahl Hebebühnen vor Ort</div>' + auswahlKnoepfe(opts, a.status));
+      card.querySelectorAll('.wb-seg > .vp-opt').forEach((b) => {
+        b.onclick = async () => { a.status = b.dataset.val; await saveNow(); await render(`.wb-item[data-pid="${p.id}"]`); };
+      });
+      for (const g of p.gruppen.slice(0, +a.status || 0)) {
+        await fotoBlock(card, p.id + '-' + g.id, `${g.label}: Bühnennummer und Standort erkennbar (Pflicht, mindestens 1)`, 1);
+      }
+    }
 
     if (p.typ === 'frei') {
       card.insertAdjacentHTML('beforeend', `<textarea class="vp-text wb-auto wb-frei" rows="3" placeholder="Eintragen …">${escHtml(a.text || '')}</textarea>
@@ -914,13 +1081,28 @@ const Wochenbericht = (() => {
   }
 
   // Ab katalog 2 steht jeder Punkt in Abschnitt 3 in einem eigenen Unterordner (v82.4).
-  const alsOrdner = (s, p) => p.typ === 'fortschritt' || (current && current.katalog === 2 && s.id === 's3');
+  const alsOrdner = (s, p) => p.typ === 'fortschritt' || (current && current.katalog >= 2 && s.id === 's3');
 
   // Kopf eines Gewerk-Unterordners nachziehen: Zähler = Baufortschritt („3/7“, „fertig“ …),
   // Balken = Anteil fertig, ✓/grün sobald das Gewerk vollständig beantwortet ist.
   // Einfache Punkte zeigen die gewählte Antwort; Balken voll und Name grün bei grüner Ampel.
   function subKopfStand(head, p) {
     const a = current.antworten[p.id] || {};
+    if (p.typ === 'zeilen') {
+      const st = fortschrittStand(p, a);
+      const ok = punktFertig(p);
+      const gruen = st.ampel === 'gruen';
+      head.style.setProperty('--p', st.anteilFertig.toFixed(3));
+      head.classList.toggle('done', ok);
+      head.classList.toggle('fertig', gruen);
+      head.classList.toggle('missing', pruefModus && !ok);
+      const stat = head.querySelector('.wb-sub-stat');
+      const beantwortet = p.zeilen.every((u) => bereichVon(a, u.id).status);
+      stat.querySelector('.stat-txt').textContent = !beantwortet ? 'offen' : gruen ? 'vorhanden' : 'nicht vorhanden';
+      stat.classList.toggle('done', gruen);
+      stat.querySelector('.stat-ck').hidden = !ok;
+      return;
+    }
     if (p.typ !== 'fortschritt') {
       const opt = (p.optionen || []).find((o) => o.v === a.status);
       const gruen = !!opt && opt.ampel === 'gruen';
@@ -1210,6 +1392,12 @@ const Wochenbericht = (() => {
         if (offen.length) d.offen = offen.join('; ');
       }
       if (p.typ !== 'fortschritt' && voll(a.text)) d.offen = a.text.trim();
+      if (p.typ === 'zeilen') {          // Spannungsversorgung: je Zeile Status, Texte als „offen“
+        d.zeilen = Object.fromEntries(p.zeilen.map((u) => [u.id, bereichVon(a, u.id).status || '']));
+        const t = p.zeilen.map((u) => [u, bereichVon(a, u.id)]).filter(([, x]) => x.status === 'nein' && voll(x.text))
+          .map(([u, x]) => u.label + ': ' + x.text.trim());
+        if (t.length) d.offen = t.join('; ');
+      }
       return d;
     });
     const alle = allePunkte().filter((p) => p.typ !== 'fotos').map((p) => antwortText(p).ampel);
@@ -1225,7 +1413,13 @@ const Wochenbericht = (() => {
   // Antwort eines Punkts als Klartext + Ampel für die Übersicht.
   function antwortText(p) {
     const a = current.antworten[p.id] || {};
-    if (p.typ === 'fortschritt') {
+    if (p.typ === 'buehnen') {
+      if (!['0', '1', '2'].includes(a.status)) return { text: 'offen', ampel: 'rot' };
+      const n = +a.status;
+      const text = n === 0 ? 'alle abgeholt' : n === 1 ? '1 Hebebühne vor Ort' : `${n} Hebebühnen vor Ort`;
+      return { text, ampel: n === 0 ? 'grau' : 'gruen' };
+    }
+    if (p.typ === 'fortschritt' || p.typ === 'zeilen') {
       const st = fortschrittStand(p, a);
       return { text: st.text, ampel: st.ampel };
     }
@@ -1260,6 +1454,7 @@ const Wochenbericht = (() => {
   // drei schattierten Zellen (grün fertig, gelb teilweise, grau Rest). breite in Twips.
   const BALKEN_FARBEN = ['3A9D5D', 'E0A100', 'DDE2E7'];
   function balkenXml(st, breite) {
+    if (st.felder) return felderXml(st.felder, breite);
     if (st.stufen) return stufenXml(st, breite);
     const anteile = [st.anteilFertig, st.anteilTeil, Math.max(0, 1 - st.anteilFertig - st.anteilTeil)];
     const teile = anteile.map((x, i) => [Math.round(x * breite), BALKEN_FARBEN[i]]).filter(([w]) => w > 0);
@@ -1277,14 +1472,20 @@ const Wochenbericht = (() => {
       + `<w:tblGrid>${teile.map(([w]) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`
       + `<w:tr><w:trPr><w:trHeight w:val="220" w:hRule="exact"/></w:trPr>${zellen}</w:tr></w:tbl>` + leer(2);
   }
+  // Felder (v85.10, Spannungsversorgung und Hebebühnen): n gleich breite, beschriftete Zellen.
+  const FELD_FARBEN = { f: ['3A9D5D', 'FFFFFF'], t: ['E0A100', 'FFFFFF'], r: ['C0392B', 'FFFFFF'], o: ['DDE2E7', '5A6672'] };
+  function felderXml(felder, breite) {
+    return stufenXml({ stufen: felder.map((x) => ({ label: x.label, farben: FELD_FARBEN[x.farbe] || FELD_FARBEN.o })) }, breite);
+  }
   // NWS: drei gleich breite, beschriftete Abschnitte; erreichte gefüllt (gelb, im Serverraum grün).
   function stufenXml(st, breite) {
-    const w = Math.floor(breite / 3);
-    const breiten = [w, w, breite - 2 * w];
+    const n = st.stufen.length;                       // NWS 3, Felder (v85.10) 1–3
+    const w = Math.floor(breite / n);
+    const breiten = st.stufen.map((_, i) => (i < n - 1 ? w : breite - (n - 1) * w));
     const weiss = (s) => `<w:${s} w:val="single" w:sz="12" w:space="0" w:color="FFFFFF"/>`;
     const zellen = st.stufen.map((x, i) => {
-      const fill = x.an ? BALKEN_FARBEN[st.farbe === 'f' ? 0 : 1] : BALKEN_FARBEN[2];
-      const farbe = x.an ? 'FFFFFF' : '5A6672';
+      const fill = x.farben ? x.farben[0] : x.an ? BALKEN_FARBEN[st.farbe === 'f' ? 0 : 1] : BALKEN_FARBEN[2];
+      const farbe = x.farben ? x.farben[1] : x.an ? 'FFFFFF' : '5A6672';
       return `<w:tc><w:tcPr><w:tcW w:w="${breiten[i]}" w:type="dxa"/><w:tcBorders>${weiss('left')}${weiss('right')}</w:tcBorders>`
         + `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/><w:vAlign w:val="center"/></w:tcPr>`
         + '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
@@ -1331,6 +1532,9 @@ const Wochenbericht = (() => {
     ABS.forEach((s, i) => s.punkte.forEach((p, k) => {
       if (imKasten(p)) gewerke.push({ p, nr: `${i + 1}.${k + 1}`, anker: `P${i + 1}_${k + 1}` });
     }));
+    // v85.10: am Ende eine Zeile „6. Hebebühnen“ für den ganzen Abschnitt; Klick springt zu A6.
+    const iBuehnen = ABS.findIndex((s) => s.id === KASTEN_BUEHNEN.id);
+    if (gewerke.length && iBuehnen >= 0) gewerke.push({ p: KASTEN_BUEHNEN, nr: `${iBuehnen + 1}.`, anker: `A${iBuehnen + 1}` });
     if (gewerke.length) {
       doc.push(Docx.pBar('Baufortschritt', BLAU));
       const WF = [3200, 3238, 3200];
@@ -1415,7 +1619,7 @@ const Wochenbericht = (() => {
         const a = current.antworten[p.id] || {};
         const inhalt = [];
         const text = (t, stil) => inhalt.push({ text: t, stil });
-        const fotos = (items) => { if (items.length) inhalt.push({ fotos: items }); };
+        const fotos = (items, spalten) => { if (items.length) inhalt.push({ fotos: items, spalten }); };
         let status;
         if (p.typ === 'wahl') {
           const at = antwortText(p);
@@ -1447,6 +1651,31 @@ const Wochenbericht = (() => {
             }
           }
           if (p.fotos) fotos(await fotoItems(p.id));
+        } else if (p.typ === 'zeilen') {
+          const st = fortschrittStand(p, a);
+          status = AMPEL[st.ampel] || AMPEL.grau;
+          text(st.text, { bold: true, color: status.color, after: 60 });
+          for (const u of p.zeilen) {
+            const x = bereichVon(a, u.id);
+            const o = p.optionen.find((q) => q.v === x.status);
+            const ok = o && o.ampel === 'gruen';
+            text(`${ok ? '✓' : '!'}  ${u.label} – ${o ? o.label : 'offen'}`,
+              { color: ok ? '1F7A43' : 'B03224', bold: !ok, after: 20 });
+            if (o && o.text && voll(x.text)) text(labelKurz(o.text.label) + ': ' + x.text, { sz: 20, after: 60 });
+          }
+        } else if (p.typ === 'buehnen') {
+          const at = antwortText(p);
+          status = AMPEL[at.ampel] || AMPEL.grau;
+          text(at.text, { bold: true, color: status.color, after: 60 });
+          // v85.11: alle Bühnenfotos in EINE Liste – zwei Hochkant-Fotos stehen dann nebeneinander
+          // (Docx.card), und Abschnitt 6 passt auf eine Seite. Die Bühne steht in der Bildunterschrift.
+          const alle = [];
+          for (const g of p.gruppen.slice(0, +a.status || 0)) {
+            for (const it of await fotoItems(p.id + '-' + g.id)) {
+              alle.push({ ...it, caption: g.label + (voll(it.caption) ? ' – ' + it.caption.trim() : '') });
+            }
+          }
+          fotos(alle);
         } else if (p.typ === 'frei') {
           status = AMPEL[antwortText(p).ampel] || AMPEL.grau;
           if (a.nichts) text(p.nichts, { color: '5A6672', after: 60 });
@@ -1462,7 +1691,7 @@ const Wochenbericht = (() => {
               if (!items.length) continue;
               irgendwas = true;
               text(g.label, { bold: true, sz: 20, after: 40 });
-              fotos(items);
+              fotos(items, p.wordSpalten);   // Fortschrittsbilder: drei nebeneinander (v85.12)
             }
             if (!irgendwas) text('keine Fortschrittsbilder', { color: '5A6672', after: 60 });
           }
@@ -1496,7 +1725,7 @@ const Wochenbericht = (() => {
       }
     }
     // Unsichtbare Daten für die Gesamtübersicht im AVL-Tool (ab v83, nur katalog 2).
-    if (current.katalog === 2) doc.daten('urn:nfk-doku:wochenbericht:1', 'nfkWochenbericht', berichtsDaten(h));
+    if (current.katalog >= 2) doc.daten('urn:nfk-doku:wochenbericht:1', 'nfkWochenbericht', berichtsDaten(h));
     // Kopf-/Fußzeile ab Seite 2: welcher Bericht, welche Seite.
     doc.kopfFuss({ kopf: ['Wochenbericht ' + kwText(current.kw), h.filiale].filter(Boolean).join(' · ') });
     return { blob: await doc.toBlob(), o };
@@ -1550,12 +1779,29 @@ const Wochenbericht = (() => {
     return geaendert;
   }
 
+  // v85.9: Berichte mit katalog 2, aus denen noch kein Word-Bericht erstellt wurde, bekommen die
+  // neuen Punkte (Spannungsversorgung, Hebebühnen) dazu – sonst fehlten sie im Bericht der laufenden
+  // Woche, der schon vor dem Update begonnen war. Bisherige Antworten bleiben, die Punkte sind
+  // gleich geblieben (katalog 3 = katalog 2 + neue Punkte). Verschickte Berichte bleiben, wie sie sind.
+  function aufKatalog3(job) {
+    let geaendert = false;
+    for (const b of liste(job)) {
+      if (b.katalog !== 2 || b.exportiertAm) continue;
+      b.katalog = 3;
+      if (!b.antworten) b.antworten = {};
+      if (!b.vor) b.vor = {};
+      vorbelegen(job, b, true);
+      geaendert = true;
+    }
+    return geaendert;
+  }
+
   // ------------------------------------------------------------- Einstieg
   async function enter() {
     const job = App.getCurrentJob();
     if (!job) return;
     try { await altFotosUmziehen(job); } catch (e) { console.warn('Fotos „Serverschränke" umziehen fehlgeschlagen', e); }
-    if (jaNeinUmstellen(job)) await App.saveCurrentJob();
+    if (jaNeinUmstellen(job) | aufKatalog3(job)) await App.saveCurrentJob();
     // Rückkehr aus einem anderen Bereich: den zuletzt geöffneten Bericht weiterzeigen.
     // Nach einem Auftragswechsel hat reset() ihn verworfen – dann die aktuelle KW.
     if (current) { await zaehleFotos(); await render(); return; }
